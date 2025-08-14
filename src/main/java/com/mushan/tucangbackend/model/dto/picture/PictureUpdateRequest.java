@@ -14,14 +14,14 @@ public class PictureUpdateRequest implements Serializable {
     private Long id;  
   
     /**  
-     * 图片名称  
+     * 图片名称
      */  
-    private String name;  
-  
-    /**  
-     * 简介  
-     */  
-    private String introduction;  
+    private String name;
+
+    /**
+     * 简介
+     */
+    private String introduction;
   
     /**  
      * 分类  

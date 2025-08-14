@@ -1,8 +1,7 @@
-package com.mushan.tucangbackend.model.dto.picture;
+package com.mushan.tucangbackend.model.vo;
 
 import cn.hutool.json.JSONUtil;
 import com.mushan.tucangbackend.model.entity.Picture;
-import com.mushan.tucangbackend.model.vo.UserVO;
 import lombok.Data;
 import org.springframework.beans.BeanUtils;
 
@@ -19,12 +18,17 @@ public class PictureVO implements Serializable {
     private Long id;  
   
     /**  
-     * 图片 url  
+     * 图片 url
      */  
-    private String url;  
-  
+    private String url;
+
+    /**
+     * 缩略图 url
+     */
+    private String thumbnailUrl;
+
     /**  
-     * 图片名称  
+     * 图片名称
      */  
     private String name;  
   
@@ -49,29 +53,34 @@ public class PictureVO implements Serializable {
     private Long picSize;  
   
     /**  
-     * 图片宽度  
+     * 图片宽度
      */  
     private Integer picWidth;  
   
     /**  
-     * 图片高度  
+     * 图片高度
      */  
     private Integer picHeight;  
   
     /**  
-     * 图片比例  
+     * 图片比例
      */  
     private Double picScale;  
   
     /**  
-     * 图片格式  
+     * 图片格式
      */  
     private String picFormat;  
   
     /**  
      * 用户 id  
      */  
-    private Long userId;  
+    private Long userId;
+
+    /**
+     * 空间 id
+     */
+    private Long spaceId;
   
     /**  
      * 创建时间  
@@ -99,27 +108,27 @@ public class PictureVO implements Serializable {
      * 封装类转对象  
      */  
     public static Picture voToObj(PictureVO pictureVO) {
-        if (pictureVO == null) {  
+        if (pictureVO == null) {
             return null;  
         }  
-        Picture picture = new Picture();  
+        Picture picture = new Picture();
         BeanUtils.copyProperties(pictureVO, picture);
         // 类型不同，需要转换  
         picture.setTags(JSONUtil.toJsonStr(pictureVO.getTags()));
-        return picture;  
+        return picture;
     }  
   
     /**  
      * 对象转封装类  
      */  
-    public static PictureVO objToVo(Picture picture) {  
-        if (picture == null) {  
+    public static PictureVO objToVo(Picture picture) {
+        if (picture == null) {
             return null;  
         }  
-        PictureVO pictureVO = new PictureVO();  
-        BeanUtils.copyProperties(picture, pictureVO);  
+        PictureVO pictureVO = new PictureVO();
+        BeanUtils.copyProperties(picture, pictureVO);
         // 类型不同，需要转换  
-        pictureVO.setTags(JSONUtil.toList(picture.getTags(), String.class));  
-        return pictureVO;  
+        pictureVO.setTags(JSONUtil.toList(picture.getTags(), String.class));
+        return pictureVO;
     }  
 }

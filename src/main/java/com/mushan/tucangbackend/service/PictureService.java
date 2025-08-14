@@ -4,10 +4,11 @@ package com.mushan.tucangbackend.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.mushan.tucangbackend.api.aliyunai.model.CreateOutPaintingTaskResponse;
 import com.mushan.tucangbackend.model.dto.picture.*;
 import com.mushan.tucangbackend.model.entity.Picture;
 import com.mushan.tucangbackend.model.entity.User;
-import org.springframework.web.multipart.MultipartFile;
+import com.mushan.tucangbackend.model.vo.PictureVO;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -43,6 +44,9 @@ public interface PictureService extends IService<Picture> {
     );
 
 
+    void editPicture(PictureEditRequest pictureEditRequest, User loginUser);
+
+    void deletePicture(long pictureId, User loginUser);
 
     /**
      * 获取查询包装类
@@ -70,6 +74,8 @@ public interface PictureService extends IService<Picture> {
      */
     Page<PictureVO> getPictureVOPage(Page<Picture> picturePage, HttpServletRequest request);
 
+    CreateOutPaintingTaskResponse createPictureOutPaintingTask(CreatePictureOutPaintingTaskRequest createPictureOutPaintingTaskRequest, User loginUser);
+
     /**
      * 校验图片
      * @param picture
@@ -86,4 +92,7 @@ public interface PictureService extends IService<Picture> {
 
     void fillReviewParams(Picture picture, User loginUser);
 
+    void clearPictureFile(Picture oldPicture);
+
+    void checkPictureAuth(User loginUser, Picture picture);
 }

@@ -11,10 +11,10 @@ import java.util.Arrays;
 import java.util.List;
 
 @Service
-public class FilePictureUpload extends PictureUploadTemplate {  
+public class FilePictureUpload extends PictureUploadTemplate {
   
     @Override  
-    protected void validPicture(Object inputSource) {  
+    protected void validPicture(Object inputSource) {
         MultipartFile multipartFile = (MultipartFile) inputSource;
         ThrowUtils.throwIf(multipartFile == null, ErrorCode.PARAMS_ERROR, "文件不能为空");
         // 1. 校验文件大小  

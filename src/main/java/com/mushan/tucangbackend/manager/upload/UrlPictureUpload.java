@@ -18,10 +18,10 @@ import java.util.Arrays;
 import java.util.List;
 
 @Service
-public class UrlPictureUpload extends PictureUploadTemplate {  
+public class UrlPictureUpload extends PictureUploadTemplate {
     @Override  
-    protected void validPicture(Object inputSource) {  
-        String fileUrl = (String) inputSource;  
+    protected void validPicture(Object inputSource) {
+        String fileUrl = (String) inputSource;
         ThrowUtils.throwIf(StrUtil.isBlank(fileUrl), ErrorCode.PARAMS_ERROR, "文件地址不能为空");
         try {
             // 1. 验证 URL 格式
@@ -66,19 +66,23 @@ public class UrlPictureUpload extends PictureUploadTemplate {
                 response.close();
             }
         }
-    }  
-  
-    @Override  
-    protected String getOriginFilename(Object inputSource) {  
-        String fileUrl = (String) inputSource;  
-        // 从 URL 中提取文件名  
-        return FileUtil.mainName(fileUrl);
-    }  
+    }
+
+    @Override
+    protected String getOriginFilename(Object inputSource) {
+        String fileUrl = (String) inputSource;
+        // 使用 FileUtil.getName 获取完整的文件名（包含扩展名）
+        return FileUtil.getName(fileUrl);
+    }
   
     @Override  
     protected void processFile(Object inputSource, File file) throws Exception {
         String fileUrl = (String) inputSource;  
         // 下载文件到临时目录  
         HttpUtil.downloadFile(fileUrl, file);
+        // 验证下载的文件是否有效
+        if (!file.exists() || file.length() == 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "下载的文件为空或无效");
+        }
     }  
 }

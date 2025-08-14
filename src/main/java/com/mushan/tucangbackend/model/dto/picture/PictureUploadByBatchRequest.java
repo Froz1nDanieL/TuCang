@@ -3,7 +3,7 @@ package com.mushan.tucangbackend.model.dto.picture;
 import lombok.Data;
 
 @Data
-public class PictureUploadByBatchRequest {  
+public class PictureUploadByBatchRequest {
   
     /**  
      * 搜索词  
