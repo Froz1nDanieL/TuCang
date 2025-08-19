@@ -9,6 +9,7 @@ import com.mushan.tucangbackend.model.dto.picture.*;
 import com.mushan.tucangbackend.model.entity.Picture;
 import com.mushan.tucangbackend.model.entity.User;
 import com.mushan.tucangbackend.model.vo.PictureVO;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -95,4 +96,7 @@ public interface PictureService extends IService<Picture> {
     void clearPictureFile(Picture oldPicture);
 
     void checkPictureAuth(User loginUser, Picture picture);
+
+    @Transactional(rollbackFor = Exception.class)
+    void editPictureByBatch(PictureEditByBatchRequest pictureEditByBatchRequest, User loginUser);
 }

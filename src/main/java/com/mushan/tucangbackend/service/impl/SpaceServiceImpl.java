@@ -13,13 +13,16 @@ import com.mushan.tucangbackend.exception.ThrowUtils;
 import com.mushan.tucangbackend.model.dto.space.SpaceAddRequest;
 import com.mushan.tucangbackend.model.dto.space.SpaceQueryRequest;
 import com.mushan.tucangbackend.model.entity.Space;
+import com.mushan.tucangbackend.model.entity.SpaceUser;
 import com.mushan.tucangbackend.model.entity.User;
 import com.mushan.tucangbackend.model.enums.SpaceLevelEnum;
+import com.mushan.tucangbackend.model.enums.SpaceRoleEnum;
 import com.mushan.tucangbackend.model.enums.SpaceTypeEnum;
 import com.mushan.tucangbackend.model.vo.SpaceVO;
 import com.mushan.tucangbackend.model.vo.UserVO;
 import com.mushan.tucangbackend.service.SpaceService;
 import com.mushan.tucangbackend.mapper.SpaceMapper;
+import com.mushan.tucangbackend.service.SpaceUserService;
 import com.mushan.tucangbackend.service.UserService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -46,6 +49,9 @@ public class SpaceServiceImpl extends ServiceImpl<SpaceMapper, Space>
 
     @Resource
     private TransactionTemplate transactionTemplate;
+
+    @Resource
+    private SpaceUserService spaceUserService;
 
 
     @Override
@@ -86,6 +92,17 @@ public class SpaceServiceImpl extends ServiceImpl<SpaceMapper, Space>
                 // 写入数据库
                 boolean result = this.save(space);
                 ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+                // 检查space的ID是否已生成
+                ThrowUtils.throwIf(space.getId() == null, ErrorCode.OPERATION_ERROR, "创建空间失败，未能获取空间ID");
+                // 如果是团队空间，关联新增团队成员记录
+                if (SpaceTypeEnum.TEAM.getValue() == spaceAddRequest.getSpaceType()) {
+                    SpaceUser spaceUser = new SpaceUser();
+                    spaceUser.setSpaceId(space.getId());
+                    spaceUser.setUserId(userId);
+                    spaceUser.setSpaceRole(SpaceRoleEnum.ADMIN.getValue());
+                    result = spaceUserService.save(spaceUser);
+                    ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "创建团队成员记录失败");
+                }
                 // 返回新写入的数据 id
                 return space.getId();
             });

@@ -18,6 +18,7 @@ import com.mushan.tucangbackend.service.PictureService;
 import com.mushan.tucangbackend.service.SpaceAnalyzeService;
 import com.mushan.tucangbackend.service.SpaceService;
 import com.mushan.tucangbackend.service.UserService;
+import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.LinkedHashMap;
@@ -25,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+@Service
 public class SpaceAnalyzeServiceImpl extends ServiceImpl<SpaceMapper, Space> implements SpaceAnalyzeService {
 
 
