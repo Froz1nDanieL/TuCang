@@ -19,14 +19,16 @@ import com.mushan.tucangbackend.manager.FileManager;
 import com.mushan.tucangbackend.manager.upload.FilePictureUpload;
 import com.mushan.tucangbackend.manager.upload.PictureUploadTemplate;
 import com.mushan.tucangbackend.manager.upload.UrlPictureUpload;
+import com.mushan.tucangbackend.mapper.UserPictureInteractionMapper;
 import com.mushan.tucangbackend.model.dto.file.UploadPictureResult;
 import com.mushan.tucangbackend.model.dto.picture.*;
-import com.mushan.tucangbackend.model.entity.Picture;
-import com.mushan.tucangbackend.model.entity.Space;
-import com.mushan.tucangbackend.model.entity.User;
+import com.mushan.tucangbackend.model.entity.*;
 import com.mushan.tucangbackend.model.enums.PictureReviewStatusEnum;
+import com.mushan.tucangbackend.model.vo.PictureAlbumVO;
+import com.mushan.tucangbackend.model.vo.PictureCursorQueryVO;
 import com.mushan.tucangbackend.model.vo.PictureVO;
 import com.mushan.tucangbackend.model.vo.UserVO;
+import com.mushan.tucangbackend.service.PictureAlbumService;
 import com.mushan.tucangbackend.service.PictureService;
 import com.mushan.tucangbackend.mapper.PictureMapper;
 import com.mushan.tucangbackend.service.SpaceService;
@@ -38,6 +40,8 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.beans.BeanUtils;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -82,6 +86,12 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     @Resource
     private AliYunAiApi aliYunAiApi;
 
+    @Resource
+    private UserPictureInteractionMapper userPictureInteractionMapper;
+
+    @Lazy
+    @Resource
+    private PictureAlbumService pictureAlbumService;
 
     @Override
     public PictureVO uploadPicture(Object inputSource, PictureUploadRequest pictureUploadRequest, User loginUser) {
@@ -392,6 +402,27 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             UserVO userVO = userService.getUserVO(user);
             pictureVO.setUser(userVO);
         }
+
+        // 获取当前登录用户
+        User loginUser = userService.getLoginUser(request);
+        if (loginUser != null) {
+            // 查询当前用户对这张图片的点赞状态
+            QueryWrapper<UserPictureInteraction> likeQueryWrapper = new QueryWrapper<>();
+            likeQueryWrapper.eq("userId", loginUser.getId())
+                    .eq("pictureId", picture.getId())
+                    .eq("type", 0);  // 点赞类型
+            List<UserPictureInteraction> likeInteractions = userPictureInteractionMapper.selectList(likeQueryWrapper);
+            pictureVO.setIsLiked(!likeInteractions.isEmpty());
+
+            // 查询当前用户对这张图片的收藏状态
+            QueryWrapper<UserPictureInteraction> favoriteQueryWrapper = new QueryWrapper<>();
+            favoriteQueryWrapper.eq("userId", loginUser.getId())
+                    .eq("pictureId", picture.getId())
+                    .eq("type", 1);  // 收藏类型
+            List<UserPictureInteraction> favoriteInteractions = userPictureInteractionMapper.selectList(favoriteQueryWrapper);
+            pictureVO.setIsFavorited(!favoriteInteractions.isEmpty());
+        }
+
         return pictureVO;
     }
 
@@ -561,6 +592,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         String category = pictureEditByBatchRequest.getCategory();
         List<String> tags = pictureEditByBatchRequest.getTags();
 
+
         // 1. 校验参数
         ThrowUtils.throwIf(spaceId == null || CollUtil.isEmpty(pictureIdList), ErrorCode.PARAMS_ERROR);
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
@@ -591,15 +623,552 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             }
         });
 
+        // 批量重命名
+        String nameRule = pictureEditByBatchRequest.getNameRule();
+        fillPictureWithNameRule(pictureList, nameRule);
+
         // 5. 批量更新
         boolean result = this.updateBatchById(pictureList);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
     }
 
 
+    /**
+     * nameRule 格式：图片{序号}
+     *
+     * @param pictureList
+     * @param nameRule
+     */
+    private void fillPictureWithNameRule(List<Picture> pictureList, String nameRule) {
+        if (CollUtil.isEmpty(pictureList) || StrUtil.isBlank(nameRule)) {
+            return;
+        }
+        long count = 1;
+        try {
+            for (Picture picture : pictureList) {
+                String pictureName = nameRule.replaceAll("\\{序号}", String.valueOf(count++));
+                picture.setName(pictureName);
+            }
+        } catch (Exception e) {
+            log.error("名称解析错误", e);
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "名称解析错误");
+        }
+    }
 
+    @Override
+    public PictureCursorQueryVO listPictureVOByCursor(PictureCursorQueryRequest pictureCursorQueryRequest, HttpServletRequest request) {
+        // 限制每次查询的数据量
+        long size = pictureCursorQueryRequest.getPageSize();
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
+
+        // 构造查询条件
+        QueryWrapper<Picture> queryWrapper = this.getQueryWrapperForCursor(pictureCursorQueryRequest);
+
+        // 查询数据
+        List<Picture> pictureList = this.list(queryWrapper.last(" LIMIT " + size));
+
+        return buildPictureCursorQueryVO(pictureList, size, request);
+    }
+
+    /**
+     * 为游标查询构造查询条件
+     *
+     * @param pictureCursorQueryRequest 游标查询请求
+     * @return QueryWrapper<Picture> 查询条件构造器
+     */
+    private QueryWrapper<Picture> getQueryWrapperForCursor(PictureCursorQueryRequest pictureCursorQueryRequest) {
+        QueryWrapper<Picture> queryWrapper = new QueryWrapper<>();
+        if (pictureCursorQueryRequest == null) {
+            return queryWrapper;
+        }
+
+        // 从对象中取值
+        Long id = pictureCursorQueryRequest.getId();
+        String name = pictureCursorQueryRequest.getName();
+        String introduction = pictureCursorQueryRequest.getIntroduction();
+        String category = pictureCursorQueryRequest.getCategory();
+        List<String> tags = pictureCursorQueryRequest.getTags();
+        Long picSize = pictureCursorQueryRequest.getPicSize();
+        Integer picWidth = pictureCursorQueryRequest.getPicWidth();
+        Integer picHeight = pictureCursorQueryRequest.getPicHeight();
+        Double picScale = pictureCursorQueryRequest.getPicScale();
+        String picFormat = pictureCursorQueryRequest.getPicFormat();
+        String searchText = pictureCursorQueryRequest.getSearchText();
+        Long userId = pictureCursorQueryRequest.getUserId();
+        Integer reviewStatus = pictureCursorQueryRequest.getReviewStatus();
+        String reviewMessage = pictureCursorQueryRequest.getReviewMessage();
+        Long reviewerId = pictureCursorQueryRequest.getReviewerId();
+        Long spaceId = pictureCursorQueryRequest.getSpaceId();
+        Date startEditTime = pictureCursorQueryRequest.getStartEditTime();
+        Date endEditTime = pictureCursorQueryRequest.getEndEditTime();
+        boolean nullSpaceId = pictureCursorQueryRequest.isNullSpaceId();
+        String sortField = pictureCursorQueryRequest.getSortField();
+        String sortOrder = pictureCursorQueryRequest.getSortOrder();
+
+        // 从多字段中搜索
+        if (StrUtil.isNotBlank(searchText)) {
+            // 需要拼接查询条件
+            queryWrapper.and(qw -> qw.like("name", searchText)
+                    .or()
+                    .like("introduction", searchText)
+            );
+        }
+        queryWrapper.eq(ObjUtil.isNotEmpty(id), "id", id);
+        queryWrapper.eq(ObjUtil.isNotEmpty(userId), "userId", userId);
+        queryWrapper.like(StrUtil.isNotBlank(name), "name", name);
+        queryWrapper.like(StrUtil.isNotBlank(introduction), "introduction", introduction);
+        queryWrapper.like(StrUtil.isNotBlank(picFormat), "picFormat", picFormat);
+        queryWrapper.eq(StrUtil.isNotBlank(category), "category", category);
+        queryWrapper.eq(ObjUtil.isNotEmpty(picWidth), "picWidth", picWidth);
+        queryWrapper.eq(ObjUtil.isNotEmpty(picHeight), "picHeight", picHeight);
+        queryWrapper.eq(ObjUtil.isNotEmpty(picSize), "picSize", picSize);
+        queryWrapper.eq(ObjUtil.isNotEmpty(picScale), "picScale", picScale);
+        queryWrapper.eq(ObjUtil.isNotEmpty(reviewStatus), "reviewStatus", reviewStatus);
+        queryWrapper.like(StrUtil.isNotBlank(reviewMessage), "reviewMessage", reviewMessage);
+        queryWrapper.eq(ObjUtil.isNotEmpty(reviewerId), "reviewerId", reviewerId);
+        queryWrapper.eq(ObjUtil.isNotEmpty(spaceId), "spaceId", spaceId);
+        queryWrapper.ge(startEditTime != null, "editTime", startEditTime);
+        queryWrapper.lt(endEditTime != null, "editTime", endEditTime);
+        queryWrapper.isNull(nullSpaceId, "spaceId");
+        // JSON 数组查询
+        if (CollUtil.isNotEmpty(tags)) {
+            for (String tag : tags) {
+                queryWrapper.like("tags", "\"" + tag + "\"");
+            }
+        }
+
+        // 添加游标条件
+        Long cursorId = pictureCursorQueryRequest.getCursorId();
+        if (cursorId != null) {
+            // 如果是降序排序，查找比游标ID小的数据
+            if (StrUtil.isBlank(sortField) || "id".equals(sortField)) {
+                if (StrUtil.isBlank(sortOrder) || "descend".equals(sortOrder)) {
+                    queryWrapper.lt("id", cursorId);
+                } else {
+                    queryWrapper.gt("id", cursorId);
+                }
+            } else {
+                // 其他字段排序仍使用原来的方式
+                queryWrapper.gt("id", cursorId);
+            }
+        }
+
+        // 设置排序
+        // 默认按id升序排序
+        if (StrUtil.isBlank(sortField)) {
+            sortField = "id";
+        }
+        queryWrapper.orderBy(true, !"descend".equals(sortOrder), sortField);
+
+        return queryWrapper;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Boolean likePicture(Long pictureId, User loginUser) {
+        // 检查图片是否存在
+        Picture picture = this.getById(pictureId);
+        if (picture == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
+        }
+
+        // 查询用户是否已经点赞过该图片
+        QueryWrapper<UserPictureInteraction> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("userId", loginUser.getId())
+                .eq("pictureId", pictureId)
+                .eq("type", 0); // 0 表示点赞
+        UserPictureInteraction interaction = userPictureInteractionMapper.selectOne(queryWrapper);
+
+        boolean isLiked;
+        if (interaction != null) {
+            // 用户已点赞，执行取消点赞操作
+            userPictureInteractionMapper.deleteById(interaction.getId());
+            // 减少图片的点赞数
+            picture.setLikeCount(Math.max(0, picture.getLikeCount() - 1));
+            isLiked = false;
+        } else {
+            // 用户未点赞，执行点赞操作
+            UserPictureInteraction newInteraction = new UserPictureInteraction();
+            newInteraction.setUserId(loginUser.getId());
+            newInteraction.setPictureId(pictureId);
+            newInteraction.setType(0); // 0 表示点赞
+            newInteraction.setCreateTime(new Date());
+            newInteraction.setUpdateTime(new Date());
+            userPictureInteractionMapper.insert(newInteraction);
+            // 增加图片的点赞数
+            picture.setLikeCount(picture.getLikeCount() + 1);
+            isLiked = true;
+        }
+
+        // 更新图片的点赞数
+        this.updateById(picture);
+        return isLiked;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Boolean favoritePicture(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
+        Long pictureId = pictureFavoriteRequest.getPictureId();
+        Long albumId = pictureFavoriteRequest.getAlbumId();
+
+        // 检查图片是否存在
+        Picture picture = this.getById(pictureId);
+        if (picture == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
+        }
+
+        // 必须指定收藏夹
+        if (albumId == null || albumId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "必须指定收藏夹");
+        }
+
+        // 检查收藏夹是否存在
+        PictureAlbum pictureAlbum = pictureAlbumService.getById(albumId);
+        if (pictureAlbum == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "收藏夹不存在");
+        }
+        // 检查收藏夹是否属于当前用户
+        if (!pictureAlbum.getUserId().equals(loginUser.getId())) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有权限操作该收藏夹");
+        }
+
+        // 查询用户是否已经收藏过该图片到指定收藏夹
+        QueryWrapper<UserPictureInteraction> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("userId", loginUser.getId())
+                .eq("pictureId", pictureId)
+                .eq("albumId", albumId)
+                .eq("type", 1); // 1 表示收藏
+
+        UserPictureInteraction interaction = userPictureInteractionMapper.selectOne(queryWrapper);
+
+        boolean isFavorited;
+        if (interaction != null) {
+            // 用户已收藏到指定收藏夹，执行取消收藏操作
+            userPictureInteractionMapper.deleteById(interaction.getId());
+            // 减少图片的收藏数
+            picture.setFavoriteCount(Math.max(0, picture.getFavoriteCount() - 1));
+            isFavorited = false;
+
+            // 减少该收藏夹的图片数量
+            pictureAlbum.setPictureCount(Math.max(0, pictureAlbum.getPictureCount() - 1));
+            pictureAlbumService.updateById(pictureAlbum);
+        } else {
+            // 用户未收藏到指定收藏夹，执行收藏操作
+            UserPictureInteraction newInteraction = new UserPictureInteraction();
+            newInteraction.setUserId(loginUser.getId());
+            newInteraction.setPictureId(pictureId);
+            newInteraction.setAlbumId(albumId);
+            newInteraction.setType(1); // 1 表示收藏
+            newInteraction.setCreateTime(new Date());
+            newInteraction.setUpdateTime(new Date());
+
+            try {
+                userPictureInteractionMapper.insert(newInteraction);
+            } catch (DuplicateKeyException e) {
+                // 如果并发插入导致重复键错误，忽略该错误并认为收藏成功
+                log.warn("并发插入收藏记录时发生重复键错误，忽略该错误: {}", e.getMessage());
+            }
+
+            // 增加图片的收藏数
+            picture.setFavoriteCount(picture.getFavoriteCount() + 1);
+            isFavorited = true;
+
+            // 增加该收藏夹的图片数量
+            pictureAlbum.setPictureCount(pictureAlbum.getPictureCount() + 1);
+            pictureAlbumService.updateById(pictureAlbum);
+        }
+
+        // 更新图片的收藏数
+        this.updateById(picture);
+        return isFavorited;
+    }
+
+
+    @Override
+    public PictureCursorQueryVO listUserLikedPictures(PictureCursorQueryRequest pictureCursorQueryRequest, User loginUser, HttpServletRequest request) {
+        // 限制每次查询的数据量
+        long size = pictureCursorQueryRequest.getPageSize();
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
+        
+        // 构造查询条件
+        QueryWrapper<Picture> queryWrapper = this.getQueryWrapperForCursor(pictureCursorQueryRequest);
+        
+        // 添加用户点赞条件
+        queryWrapper.inSql("id", "SELECT pictureId FROM user_picture_interaction WHERE userId = " + loginUser.getId() + 
+                          " AND type = 0 AND isDelete = 0");
+        
+        // 查询数据
+        List<Picture> pictureList = this.list(queryWrapper.last(" LIMIT " + size));
+        
+        return buildPictureCursorQueryVO(pictureList, size, request);
+    }
+    
+    @Override
+    public PictureCursorQueryVO listUserFavoritedPictures(PictureCursorQueryRequest pictureCursorQueryRequest, User loginUser, HttpServletRequest request) {
+        // 限制每次查询的数据量
+        long size = pictureCursorQueryRequest.getPageSize();
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
+        
+        // 构造查询条件
+        QueryWrapper<Picture> queryWrapper = this.getQueryWrapperForCursor(pictureCursorQueryRequest);
+        
+        // 添加用户收藏条件
+        queryWrapper.inSql("id", "SELECT pictureId FROM user_picture_interaction WHERE userId = " + loginUser.getId() + 
+                          " AND type = 1 AND isDelete = 0");
+        
+        // 查询数据
+        List<Picture> pictureList = this.list(queryWrapper.last(" LIMIT " + size));
+        
+        return buildPictureCursorQueryVO(pictureList, size, request);
+    }
+    
+    @Override
+    public PictureCursorQueryVO listUserFavoritedPicturesByAlbum(Long albumId, PictureCursorQueryRequest pictureCursorQueryRequest, User loginUser, HttpServletRequest request) {
+        // 限制每次查询的数据量
+        long size = pictureCursorQueryRequest.getPageSize();
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
+        
+        // 构造查询条件
+        QueryWrapper<Picture> queryWrapper = this.getQueryWrapperForCursor(pictureCursorQueryRequest);
+        
+        // 查询指定收藏夹内的所有图片
+        queryWrapper.inSql("id", "SELECT pictureId FROM user_picture_interaction WHERE albumId = " + albumId +
+                  " AND type = 1 AND isDelete = 0");
+
+        
+        // 查询数据
+        List<Picture> pictureList = this.list(queryWrapper.last(" LIMIT " + size));
+        
+        // 增加收藏夹浏览数
+        pictureAlbumService.increaseViewCount(albumId);
+        
+        return buildPictureCursorQueryVO(pictureList, size, request);
+    }
+    
+    /**
+     * 构建PictureCursorQueryVO对象
+     * 
+     * @param pictureList 图片列表
+     * @param size 查询数量
+     * @param request HTTP请求
+     * @return PictureCursorQueryVO对象
+     */
+    private PictureCursorQueryVO buildPictureCursorQueryVO(List<Picture> pictureList, long size, HttpServletRequest request) {
+        PictureCursorQueryVO result = new PictureCursorQueryVO();
+        if (CollUtil.isEmpty(pictureList)) {
+            result.setPictureList(new ArrayList<>());
+            result.setNextCursorId(null);
+            result.setHasMore(false);
+            return result;
+        }
+        
+        // 转换为VO对象
+        List<PictureVO> pictureVOList = pictureList.stream()
+                .map(picture -> this.getPictureVO(picture, request))
+                .collect(Collectors.toList());
+        
+        result.setPictureList(pictureVOList);
+        
+        // 计算下一个游标
+        if (pictureList.size() < size) {
+            result.setNextCursorId(null);
+            result.setHasMore(false);
+        } else {
+            Picture lastPicture = pictureList.get(pictureList.size() - 1);
+            result.setNextCursorId(lastPicture.getId());
+            result.setHasMore(true);
+        }
+        
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Boolean addPictureToAlbum(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
+        Long pictureId = pictureFavoriteRequest.getPictureId();
+        Long albumId = pictureFavoriteRequest.getAlbumId();
+
+        // 检查图片是否存在
+        Picture picture = this.getById(pictureId);
+        if (picture == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
+        }
+
+        // 必须指定收藏夹
+        if (albumId == null || albumId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "必须指定收藏夹");
+        }
+
+        // 检查收藏夹是否存在
+        PictureAlbum pictureAlbum = pictureAlbumService.getById(albumId);
+        if (pictureAlbum == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "收藏夹不存在");
+        }
+        // 检查收藏夹是否属于当前用户
+        if (!pictureAlbum.getUserId().equals(loginUser.getId())) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有权限操作该收藏夹");
+        }
+
+        // 查询用户是否已经将该图片添加到此收藏夹
+        QueryWrapper<UserPictureInteraction> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("userId", loginUser.getId())
+                .eq("pictureId", pictureId)
+                .eq("albumId", albumId)
+                .eq("type", 1); // 1 表示收藏
+        UserPictureInteraction interaction = userPictureInteractionMapper.selectOne(queryWrapper);
+
+        if (interaction != null) {
+            // 图片已存在于该收藏夹中
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "图片已存在于该收藏夹中");
+        }
+
+        // 将图片添加到指定收藏夹
+        UserPictureInteraction newInteraction = new UserPictureInteraction();
+        newInteraction.setUserId(loginUser.getId());
+        newInteraction.setPictureId(pictureId);
+        newInteraction.setAlbumId(albumId);
+        newInteraction.setType(1); // 1 表示收藏
+        newInteraction.setCreateTime(new Date());
+        newInteraction.setUpdateTime(new Date());
+
+        try {
+            userPictureInteractionMapper.insert(newInteraction);
+        } catch (DuplicateKeyException e) {
+            // 如果并发插入导致重复键错误，忽略该错误并认为收藏成功
+            log.warn("并发插入收藏记录时发生重复键错误，忽略该错误: {}", e.getMessage());
+            return true;
+        }
+
+        // 增加收藏夹的图片数量
+        pictureAlbum.setPictureCount(pictureAlbum.getPictureCount() + 1);
+        pictureAlbumService.updateById(pictureAlbum);
+
+        // 增加图片的收藏数
+        picture.setFavoriteCount(picture.getFavoriteCount() + 1);
+        this.updateById(picture);
+
+        return true;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Boolean removePictureFromAlbum(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
+        Long pictureId = pictureFavoriteRequest.getPictureId();
+        Long albumId = pictureFavoriteRequest.getAlbumId();
+
+        // 检查图片是否存在
+        Picture picture = this.getById(pictureId);
+        if (picture == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
+        }
+
+        // 必须指定收藏夹
+        if (albumId == null || albumId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "必须指定收藏夹");
+        }
+
+        // 检查收藏夹是否存在
+        PictureAlbum pictureAlbum = pictureAlbumService.getById(albumId);
+        if (pictureAlbum == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "收藏夹不存在");
+        }
+        // 检查收藏夹是否属于当前用户
+        if (!pictureAlbum.getUserId().equals(loginUser.getId())) {
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有权限操作该收藏夹");
+        }
+
+        // 查询用户是否已将该图片添加到此收藏夹
+        QueryWrapper<UserPictureInteraction> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("userId", loginUser.getId())
+                .eq("pictureId", pictureId)
+                .eq("albumId", albumId)
+                .eq("type", 1); // 1 表示收藏
+        UserPictureInteraction interaction = userPictureInteractionMapper.selectOne(queryWrapper);
+
+        if (interaction == null) {
+            // 图片不存在于该收藏夹中
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在于该收藏夹中");
+        }
+
+        // 从收藏夹中移除图片
+        userPictureInteractionMapper.deleteById(interaction.getId());
+
+        // 减少收藏夹的图片数量
+        pictureAlbum.setPictureCount(Math.max(0, pictureAlbum.getPictureCount() - 1));
+        pictureAlbumService.updateById(pictureAlbum);
+
+        // 减少图片的收藏数
+        picture.setFavoriteCount(Math.max(0, picture.getFavoriteCount() - 1));
+        this.updateById(picture);
+
+        return true;
+    }
+
+    @Override
+    public List<PictureAlbumVO> getPictureAlbumsByPictureId(Long pictureId, User loginUser) {
+        // 检查图片是否存在
+        Picture picture = this.getById(pictureId);
+        if (picture == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
+        }
+        
+        // 查询当前用户的所有收藏夹
+        QueryWrapper<PictureAlbum> albumQueryWrapper = new QueryWrapper<>();
+        albumQueryWrapper.eq("userId", loginUser.getId());
+        List<PictureAlbum> albums = pictureAlbumService.list(albumQueryWrapper);
+        
+        if (albums.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        // 查询用户将该图片收藏到的所有收藏夹记录
+        QueryWrapper<UserPictureInteraction> interactionQueryWrapper = new QueryWrapper<>();
+        interactionQueryWrapper.eq("userId", loginUser.getId())
+                .eq("pictureId", pictureId)
+                .eq("type", 1) // 1 表示收藏
+                .isNotNull("albumId"); // 确保有指定收藏夹
+        List<UserPictureInteraction> interactions = userPictureInteractionMapper.selectList(interactionQueryWrapper);
+        
+        // 创建已收藏的收藏夹ID集合
+        Set<Long> favoritedAlbumIds = interactions.stream()
+                .map(UserPictureInteraction::getAlbumId)
+                .collect(Collectors.toSet());
+        
+        // 转换为VO对象并设置收藏状态
+        return albums.stream().map(album -> {
+            PictureAlbumVO albumVO = new PictureAlbumVO();
+            // 复制属性
+            albumVO.setId(album.getId());
+            albumVO.setName(album.getName());
+            albumVO.setDescription(album.getDescription());
+            albumVO.setUserId(album.getUserId());
+            albumVO.setIsPublic(album.getIsPublic());
+            albumVO.setPictureCount(album.getPictureCount());
+            albumVO.setViewCount(album.getViewCount());
+            albumVO.setCreateTime(album.getCreateTime());
+            // 设置收藏状态
+            albumVO.setIsPictureFavorited(favoritedAlbumIds.contains(album.getId()));
+            return albumVO;
+        }).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<Picture> getHotPicturesByPopularity(String category, int limit) {
+        QueryWrapper<Picture> queryWrapper = new QueryWrapper<>();
+        queryWrapper.select("id", "url", "thumbnailUrl", "name", "introduction", 
+                           "category", "tags", "picSize", "picWidth", "picHeight", 
+                           "picScale", "picFormat", "userId", "spaceId", "createTime", 
+                           "editTime", "updateTime", "reviewStatus", "reviewMessage", 
+                           "reviewerId", "reviewTime", "likeCount", "favoriteCount", "isDelete",
+                           "(likeCount * 0.6 + favoriteCount * 0.4) AS hotScore")
+                .eq("category", category)
+                .eq("reviewStatus", 1) // 已审核通过的图片
+                .eq("isDelete", 0) // 未删除的图片
+                .apply("(likeCount * 0.6 + favoriteCount * 0.4) > 0") // 热度大于0
+                .orderByDesc("(likeCount * 0.6 + favoriteCount * 0.4)") // 按热度降序排列
+                .last("LIMIT " + limit);
+        
+        return this.list(queryWrapper);
+    }
+    
 }
-
-
-
-

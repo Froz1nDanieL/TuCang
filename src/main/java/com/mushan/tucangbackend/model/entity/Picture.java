@@ -120,6 +120,16 @@ public class Picture {
      */
     private Date reviewTime;
 
+    /**
+     * 点赞数
+     */
+    private Integer likeCount = 0;
+
+    /**
+     * 收藏数
+     */
+    private Integer favoriteCount = 0;
+
 
     /**
      * 是否删除

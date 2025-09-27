@@ -4,6 +4,7 @@ package com.mushan.tucangbackend.controller;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.DigestUtil;
 import cn.hutool.json.JSONUtil;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -30,6 +31,8 @@ import com.mushan.tucangbackend.model.entity.Picture;
 import com.mushan.tucangbackend.model.entity.Space;
 import com.mushan.tucangbackend.model.entity.User;
 import com.mushan.tucangbackend.model.enums.PictureReviewStatusEnum;
+import com.mushan.tucangbackend.model.vo.PictureAlbumVO;
+import com.mushan.tucangbackend.model.vo.PictureCursorQueryVO;
 import com.mushan.tucangbackend.model.vo.PictureTagCategory;
 import com.mushan.tucangbackend.model.vo.PictureVO;
 import com.mushan.tucangbackend.service.PictureService;
@@ -168,7 +171,7 @@ public class PictureController {
         return ResultUtils.success(picture);
     }
 
-    /**
+    /**r
      * 根据 id 获取图片（封装类）
      */
     @GetMapping("/get/vo")
@@ -351,8 +354,27 @@ public class PictureController {
         return ResultUtils.success(true);
     }
 
+    /**
+     * 收藏/取消收藏图片
+     */
+    @PostMapping("/favorite")
+    @SaSpaceCheckPermission(value = SpaceUserPermissionConstant.PICTURE_VIEW)
+    public BaseResponse<Boolean> favoritePicture(@RequestBody PictureFavoriteRequest pictureFavoriteRequest, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        Boolean result = pictureService.favoritePicture(pictureFavoriteRequest, loginUser);
+        return ResultUtils.success(result);
+    }
 
-
+    /**
+     * 点赞/取消点赞图片
+     */
+    @PostMapping("/like/{pictureId}")
+    @SaSpaceCheckPermission(value = SpaceUserPermissionConstant.PICTURE_VIEW)
+    public BaseResponse<Boolean> likePicture(@PathVariable Long pictureId, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        Boolean result = pictureService.likePicture(pictureId, loginUser);
+        return ResultUtils.success(result);
+    }
 
     /**
      * 以图搜图
@@ -407,7 +429,119 @@ public class PictureController {
         return ResultUtils.success(task);
     }
 
+    /**
+     * 获取公共图库所有图片
+     */
+    @GetMapping("/list/public")
+    public BaseResponse<List<PictureVO>> listPublicPictures(HttpServletRequest request) {
+        // 构造查询条件，只查询公开图片（spaceId为null）且已审核通过的图片
+        PictureQueryRequest pictureQueryRequest = new PictureQueryRequest();
+        pictureQueryRequest.setNullSpaceId(true);
+        pictureQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
 
+        // 查询所有公开图片
+        QueryWrapper<Picture> queryWrapper = pictureService.getQueryWrapper(pictureQueryRequest);
+        List<Picture> pictureList = pictureService.list(queryWrapper);
 
+        // 转换为VO对象
+        List<PictureVO> pictureVOList = new ArrayList<>();
+        for (Picture picture : pictureList) {
+            PictureVO pictureVO = pictureService.getPictureVO(picture, request);
+            pictureVOList.add(pictureVO);
+        }
 
+        return ResultUtils.success(pictureVOList);
+    }
+    
+    /**
+     * 游标查询图片列表（封装类）
+     */
+    @PostMapping("/list/cursor/vo")
+    public BaseResponse<PictureCursorQueryVO> listPictureVOByCursor(@RequestBody PictureCursorQueryRequest pictureCursorQueryRequest,
+                                                                    HttpServletRequest request) {
+        // 限制爬虫
+        long size = pictureCursorQueryRequest.getPageSize();
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
+        
+        // 普通用户默认只能查看已过审的数据
+        pictureCursorQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
+        
+        // 空间权限校验
+        Long spaceId = pictureCursorQueryRequest.getSpaceId();
+        // 公开图库
+        if (spaceId == null) {
+            pictureCursorQueryRequest.setNullSpaceId(true);
+        } else {
+            boolean hasPermission = StpKit.SPACE.hasPermission(SpaceUserPermissionConstant.PICTURE_VIEW);
+            ThrowUtils.throwIf(!hasPermission, ErrorCode.NO_AUTH_ERROR);
+        }
+        
+        // 执行游标查询
+        PictureCursorQueryVO result = pictureService.listPictureVOByCursor(pictureCursorQueryRequest, request);
+        return ResultUtils.success(result);
+    }
+    
+    /**
+     * 游标查询用户点赞的图片列表
+     */
+    @PostMapping("/list/liked")
+    public BaseResponse<PictureCursorQueryVO> listUserLikedPictures(@RequestBody PictureCursorQueryRequest pictureCursorQueryRequest,
+                                                                             HttpServletRequest request) {
+        // 限制爬虫
+        long size = pictureCursorQueryRequest.getPageSize();
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
+        
+        User loginUser = userService.getLoginUser(request);
+        PictureCursorQueryVO result = pictureService.listUserLikedPictures(pictureCursorQueryRequest, loginUser, request);
+        return ResultUtils.success(result);
+    }
+    
+    /**
+     * 游标查询用户收藏的图片列表
+     */
+    @PostMapping("/list/favorited")
+    public BaseResponse<PictureCursorQueryVO> listUserFavoritedPictures(@RequestBody PictureCursorQueryRequest pictureCursorQueryRequest,
+                                                                                 HttpServletRequest request) {
+        // 限制爬虫
+        long size = pictureCursorQueryRequest.getPageSize();
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
+        
+        User loginUser = userService.getLoginUser(request);
+        PictureCursorQueryVO result = pictureService.listUserFavoritedPictures(pictureCursorQueryRequest, loginUser, request);
+        return ResultUtils.success(result);
+    }
+
+    /**
+     * 获取用户收藏夹列表（包含图片收藏状态）
+     *
+     * @param pictureId 图片ID
+     * @param request HTTP请求
+     * @return 收藏夹列表
+     */
+    @GetMapping("/album/list/{pictureId}")
+    public BaseResponse<List<PictureAlbumVO>> listPictureAlbumsWithStatus(@PathVariable Long pictureId, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        List<PictureAlbumVO> result = pictureService.getPictureAlbumsByPictureId(pictureId, loginUser);
+        return ResultUtils.success(result);
+    }
+
+    /**
+     * 将图片添加到收藏夹
+     */
+    @PostMapping("/album/add")
+    public BaseResponse<Boolean> addPictureToAlbum(@RequestBody PictureFavoriteRequest pictureFavoriteRequest, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        Boolean result = pictureService.addPictureToAlbum(pictureFavoriteRequest, loginUser);
+        return ResultUtils.success(result);
+    }
+
+    /**
+     * 从收藏夹移除图片
+     */
+    @PostMapping("/album/remove")
+    public BaseResponse<Boolean> removePictureFromAlbum(@RequestBody PictureFavoriteRequest pictureFavoriteRequest, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        Boolean result = pictureService.removePictureFromAlbum(pictureFavoriteRequest, loginUser);
+        return ResultUtils.success(result);
+    }
 }

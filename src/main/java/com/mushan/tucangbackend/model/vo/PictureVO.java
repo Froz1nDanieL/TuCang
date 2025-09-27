@@ -96,7 +96,27 @@ public class PictureVO implements Serializable {
     /**  
      * 更新时间  
      */  
-    private Date updateTime;  
+    private Date updateTime;
+
+    /**
+     * 点赞数
+     */
+    private Integer likeCount;
+
+    /**
+     * 收藏数
+     */
+    private Integer favoriteCount;
+
+    /**
+     * 当前用户是否已点赞
+     */
+    private Boolean isLiked = false;
+
+    /**
+     * 当前用户是否已收藏
+     */
+    private Boolean isFavorited = false;
   
     /**  
      * 创建用户信息  

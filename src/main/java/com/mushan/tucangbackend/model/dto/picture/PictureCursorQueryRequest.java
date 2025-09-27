@@ -1,0 +1,129 @@
+package com.mushan.tucangbackend.model.dto.picture;
+
+import com.mushan.tucangbackend.common.PageRequest;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
+
+import java.io.Serializable;
+import java.util.Date;
+import java.util.List;
+
+/**
+ * 图片游标查询请求
+ */
+@EqualsAndHashCode(callSuper = true)
+@Data
+public class PictureCursorQueryRequest extends PageRequest implements Serializable {
+
+    /**
+     * id
+     */
+    private Long id;
+
+    /**
+     * 图片名称
+     */
+    private String name;
+
+    /**
+     * 简介
+     */
+    private String introduction;
+
+    /**
+     * 分类
+     */
+    private String category;
+
+    /**
+     * 标签列表
+     */
+    private List<String> tags;
+
+    /**
+     * 图片体积
+     */
+    private Long picSize;
+
+    /**
+     * 图片宽度
+     */
+    private Integer picWidth;
+
+    /**
+     * 图片高度
+     */
+    private Integer picHeight;
+
+    /**
+     * 图片宽高比例
+     */
+    private Double picScale;
+
+    /**
+     * 图片格式
+     */
+    private String picFormat;
+
+    /**
+     * 搜索词
+     */
+    private String searchText;
+
+    /**
+     * 用户 id
+     */
+    private Long userId;
+
+    /**
+     * 审核状态：0-待审核; 1-通过; 2-拒绝
+     */
+    private Integer reviewStatus;
+
+    /**
+     * 审核信息
+     */
+    private String reviewMessage;
+
+    /**
+     * 审核人 id
+     */
+    private Long reviewerId;
+
+    /**
+     * 空间 id
+     */
+    private Long spaceId;
+
+    /**
+     * 编辑时间
+     */
+    private Date startEditTime;
+
+    /**
+     * 编辑时间
+     */
+    private Date endEditTime;
+
+    /**
+     * 是否空空间 id
+     */
+    private boolean nullSpaceId = false;
+
+    /**
+     * 游标ID，用于分页查询
+     */
+    private Long cursorId;
+
+    /**
+     * 排序字段
+     */
+    private String sortField;
+
+    /**
+     * 排序顺序（ascend/descend）
+     */
+    private String sortOrder;
+
+    private static final long serialVersionUID = 1L;
+}

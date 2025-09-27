@@ -1,5 +1,6 @@
 package com.mushan.tucangbackend.model.dto.spaceuser;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -15,6 +16,7 @@ public class SpaceUserAddRequest implements Serializable {
     /**
      * 用户 ID
      */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long userId;
 
     /**
