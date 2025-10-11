@@ -11,6 +11,8 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mushan.tucangbackend.api.aliyunai.AliYunAiApi;
 import com.mushan.tucangbackend.api.aliyunai.model.CreateOutPaintingTaskRequest;
 import com.mushan.tucangbackend.api.aliyunai.model.CreateOutPaintingTaskResponse;
+import com.mushan.tucangbackend.api.aliyunai.model.CreateTextToImageTaskRequest;
+import com.mushan.tucangbackend.api.aliyunai.model.CreateTextToImageTaskResponse;
 import com.mushan.tucangbackend.exception.BusinessException;
 import com.mushan.tucangbackend.exception.ErrorCode;
 import com.mushan.tucangbackend.exception.ThrowUtils;
@@ -51,6 +53,8 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -457,13 +461,13 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     /**
      * 创建图片ai扩图任务
-     * @param createPictureOutPaintingTaskRequest
+     * @param createPictureOutPaintingRequest
      * @param loginUser
      */
     @Override
-    public CreateOutPaintingTaskResponse createPictureOutPaintingTask(CreatePictureOutPaintingTaskRequest createPictureOutPaintingTaskRequest, User loginUser) {
+    public CreateOutPaintingTaskResponse createPictureOutPaintingTask(CreatePictureOutPaintingRequest createPictureOutPaintingRequest, User loginUser) {
         // 获取图片信息
-        Long pictureId = createPictureOutPaintingTaskRequest.getPictureId();
+        Long pictureId = createPictureOutPaintingRequest.getPictureId();
         Picture picture = Optional.ofNullable(this.getById(pictureId))
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_ERROR));
         // 权限校验，已改为注解鉴权
@@ -473,11 +477,73 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         CreateOutPaintingTaskRequest.Input input = new CreateOutPaintingTaskRequest.Input();
         input.setImageUrl(picture.getUrl());
         taskRequest.setInput(input);
-        BeanUtil.copyProperties(createPictureOutPaintingTaskRequest, taskRequest);
+        BeanUtil.copyProperties(createPictureOutPaintingRequest, taskRequest);
         // 创建任务
         return aliYunAiApi.createOutPaintingTask(taskRequest);
     }
 
+    /**
+     * 创建文本生成图像任务
+     *
+     * @param createTextToImageRequest
+     * @param loginUser
+     * @return
+     */
+    @Override
+    public CreateTextToImageTaskResponse createTextToImageTask(CreateTextToImageRequest createTextToImageRequest, User loginUser) {
+        // 校验图片尺寸参数
+        validateImageSize(createTextToImageRequest.getSize());
+        
+        // 构造请求参数
+        CreateTextToImageTaskRequest taskRequest = new CreateTextToImageTaskRequest();
+        CreateTextToImageTaskRequest.Input input = new CreateTextToImageTaskRequest.Input();
+        input.setPrompt(createTextToImageRequest.getPrompt());
+        input.setNegativePrompt(createTextToImageRequest.getNegativePrompt());
+        taskRequest.setInput(input);
+        
+        CreateTextToImageTaskRequest.Parameters parameters = new CreateTextToImageTaskRequest.Parameters();
+        parameters.setSize(createTextToImageRequest.getSize());
+        parameters.setN(createTextToImageRequest.getN());
+        parameters.setPromptExtend(createTextToImageRequest.getPromptExtend());
+        parameters.setWatermark(createTextToImageRequest.getWatermark());
+        parameters.setSeed(createTextToImageRequest.getSeed());
+        taskRequest.setParameters(parameters);
+        
+        // 创建任务
+        return aliYunAiApi.createTextToImageTask(taskRequest);
+    }
+
+    /**
+     * 校验图片尺寸参数
+     *
+     * @param size 尺寸字符串，格式为 "宽*高"
+     */
+    private void validateImageSize(String size) {
+        if (size == null || size.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片尺寸不能为空");
+        }
+
+        Pattern sizePattern = Pattern.compile("^(\\d+)\\*(\\d+)$");
+        Matcher matcher = sizePattern.matcher(size);
+        if (!matcher.matches()) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片尺寸格式错误，应为 宽*高 的格式");
+        }
+
+        try {
+            int width = Integer.parseInt(matcher.group(1));
+            int height = Integer.parseInt(matcher.group(2));
+            
+            if (width < 512 || width > 1440) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片宽度必须在512-1440之间");
+            }
+            
+            if (height < 512 || height > 1440) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片高度必须在512-1440之间");
+            }
+        } catch (NumberFormatException e) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片尺寸数值格式错误");
+        }
+    }
 
     @Override
     public void validPicture(Picture picture) {
@@ -764,7 +830,6 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Boolean likePicture(Long pictureId, User loginUser) {
         // 检查图片是否存在
         Picture picture = this.getById(pictureId);
@@ -806,7 +871,6 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Boolean favoritePicture(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
         Long pictureId = pictureFavoriteRequest.getPictureId();
         Long albumId = pictureFavoriteRequest.getAlbumId();
@@ -885,21 +949,20 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
 
     @Override
-    public PictureCursorQueryVO listUserLikedPictures(PictureCursorQueryRequest pictureCursorQueryRequest, User loginUser, HttpServletRequest request) {
+    public PictureCursorQueryVO listUserLikedPictures(Long userId,PictureCursorQueryRequest pictureCursorQueryRequest, HttpServletRequest request) {
         // 限制每次查询的数据量
         long size = pictureCursorQueryRequest.getPageSize();
         ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
-        
+
         // 构造查询条件
         QueryWrapper<Picture> queryWrapper = this.getQueryWrapperForCursor(pictureCursorQueryRequest);
-        
-        // 添加用户点赞条件
-        queryWrapper.inSql("id", "SELECT pictureId FROM user_picture_interaction WHERE userId = " + loginUser.getId() + 
-                          " AND type = 0 AND isDelete = 0");
-        
+
+        // 添加用户点赞条件，使用参数化查询防止SQL注入
+        queryWrapper.inSql("id", "SELECT pictureId FROM user_picture_interaction WHERE userId = " + userId + " AND type = 0");
+
         // 查询数据
-        List<Picture> pictureList = this.list(queryWrapper.last(" LIMIT " + size));
-        
+        List<Picture> pictureList = this.list(queryWrapper.last("LIMIT " + size));
+
         return buildPictureCursorQueryVO(pictureList, size, request);
     }
     
@@ -913,11 +976,10 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         QueryWrapper<Picture> queryWrapper = this.getQueryWrapperForCursor(pictureCursorQueryRequest);
         
         // 添加用户收藏条件
-        queryWrapper.inSql("id", "SELECT pictureId FROM user_picture_interaction WHERE userId = " + loginUser.getId() + 
-                          " AND type = 1 AND isDelete = 0");
-        
+        queryWrapper.inSql("id", "SELECT pictureId FROM user_picture_interaction WHERE userId = " + loginUser.getId() + " AND type = 1");
+
         // 查询数据
-        List<Picture> pictureList = this.list(queryWrapper.last(" LIMIT " + size));
+        List<Picture> pictureList = this.list(queryWrapper.last("LIMIT " + size));
         
         return buildPictureCursorQueryVO(pictureList, size, request);
     }
@@ -932,12 +994,11 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         QueryWrapper<Picture> queryWrapper = this.getQueryWrapperForCursor(pictureCursorQueryRequest);
         
         // 查询指定收藏夹内的所有图片
-        queryWrapper.inSql("id", "SELECT pictureId FROM user_picture_interaction WHERE albumId = " + albumId +
-                  " AND type = 1 AND isDelete = 0");
+        queryWrapper.inSql("id", "SELECT pictureId FROM user_picture_interaction WHERE albumId = " + albumId + " AND type = 1 AND isDelete = 0");
 
         
         // 查询数据
-        List<Picture> pictureList = this.list(queryWrapper.last(" LIMIT " + size));
+        List<Picture> pictureList = this.list(queryWrapper.last("LIMIT " + size));
         
         // 增加收藏夹浏览数
         pictureAlbumService.increaseViewCount(albumId);
@@ -983,7 +1044,6 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Boolean addPictureToAlbum(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
         Long pictureId = pictureFavoriteRequest.getPictureId();
         Long albumId = pictureFavoriteRequest.getAlbumId();
@@ -1051,7 +1111,6 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public Boolean removePictureFromAlbum(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
         Long pictureId = pictureFavoriteRequest.getPictureId();
         Long albumId = pictureFavoriteRequest.getAlbumId();

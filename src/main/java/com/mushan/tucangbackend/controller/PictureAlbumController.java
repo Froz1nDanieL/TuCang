@@ -54,6 +54,8 @@ public class PictureAlbumController {
     @Resource
     private UserPictureInteractionMapper userPictureInteractionMapper;
 
+    public static final int ALBUM_lIMIT = 15;
+
     // region 增删改查
 
     /**
@@ -218,15 +220,41 @@ public class PictureAlbumController {
                                                                    @RequestParam(defaultValue = "10") int pageSize,
                                                                    HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
-        
+
         // 构造查询条件：查询当前用户的收藏夹
         QueryWrapper<PictureAlbum> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("userId", loginUser.getId());
-        
+
         // 分页查询
         Page<PictureAlbum> page = pictureAlbumService.page(new Page<>(current, pageSize), queryWrapper);
         return ResultUtils.success(page);
     }
+
+    /**
+     * 根据用户ID获取其公开的收藏夹列表
+     *
+     * @param userId 用户ID
+     * @return 用户公开的收藏夹列表
+     */
+    @GetMapping("/list/user/{userId}")
+    public BaseResponse<List<PictureAlbum>> listUserPublicAlbums(@PathVariable Long userId) {
+
+        // 参数校验
+        if (userId == null || userId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户ID不合法");
+        }
+
+        // 构造查询条件：指定用户创建的公开收藏夹
+        QueryWrapper<PictureAlbum> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("userId", userId)
+                .eq("isPublic", 1) // 公开的收藏夹
+                .orderByDesc("createTime")
+                .last("LIMIT " + ALBUM_lIMIT);
+
+        List<PictureAlbum> userAlbums = pictureAlbumService.list(queryWrapper);
+        return ResultUtils.success(userAlbums);
+    }
+
 
     /**
      * 获取当前用户的所有收藏夹
@@ -422,7 +450,7 @@ public class PictureAlbumController {
         List<PictureAlbum> hotAlbums = pictureAlbumService.list(queryWrapper);
         return ResultUtils.success(hotAlbums);
     }
-
+    
 
     // endregion
 }

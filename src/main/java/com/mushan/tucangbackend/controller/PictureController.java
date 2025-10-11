@@ -11,6 +11,8 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.mushan.tucangbackend.annotation.AuthCheck;
 import com.mushan.tucangbackend.api.aliyunai.AliYunAiApi;
 import com.mushan.tucangbackend.api.aliyunai.model.CreateOutPaintingTaskResponse;
+import com.mushan.tucangbackend.api.aliyunai.model.CreateTextToImageTaskResponse;
+import com.mushan.tucangbackend.api.aliyunai.model.GetTextToImageTaskResponse;
 import com.mushan.tucangbackend.api.aliyunai.model.GetOutPaintingTaskResponse;
 import com.mushan.tucangbackend.api.imagesearch.model.SearchPictureByPictureRequest;
 import com.mushan.tucangbackend.api.imagesearch.model.SoImageSearchResult;
@@ -49,7 +51,6 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -317,7 +318,7 @@ public class PictureController {
     public BaseResponse<PictureTagCategory> listPictureTagCategory() {
         PictureTagCategory pictureTagCategory = new PictureTagCategory();
         List<String> tagList = Arrays.asList("热门", "搞笑", "生活", "高清", "艺术", "校园", "背景", "简历", "创意");
-        List<String> categoryList = Arrays.asList("模板", "电商", "表情包", "素材", "海报");
+        List<String> categoryList = Arrays.asList("人物","自然","艺术","建筑");
         pictureTagCategory.setTagList(tagList);
         pictureTagCategory.setCategoryList(categoryList);
         return ResultUtils.success(pictureTagCategory);
@@ -409,13 +410,28 @@ public class PictureController {
     @PostMapping("/out_painting/create_task")
     @SaSpaceCheckPermission(value = SpaceUserPermissionConstant.PICTURE_EDIT)
     public BaseResponse<CreateOutPaintingTaskResponse> createPictureOutPaintingTask(
-            @RequestBody CreatePictureOutPaintingTaskRequest createPictureOutPaintingTaskRequest,
+            @RequestBody CreatePictureOutPaintingRequest createPictureOutPaintingRequest,
             HttpServletRequest request) {
-        if (createPictureOutPaintingTaskRequest == null || createPictureOutPaintingTaskRequest.getPictureId() == null) {
+        if (createPictureOutPaintingRequest == null || createPictureOutPaintingRequest.getPictureId() == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
         User loginUser = userService.getLoginUser(request);
-        CreateOutPaintingTaskResponse response = pictureService.createPictureOutPaintingTask(createPictureOutPaintingTaskRequest, loginUser);
+        CreateOutPaintingTaskResponse response = pictureService.createPictureOutPaintingTask(createPictureOutPaintingRequest, loginUser);
+        return ResultUtils.success(response);
+    }
+
+    /**
+     * 创建 AI 文生图任务
+     */
+    @PostMapping("/text_to_image/create_task")
+    public BaseResponse<CreateTextToImageTaskResponse> createTextToImageTask(
+            @RequestBody CreateTextToImageRequest createTextToImageRequest,
+            HttpServletRequest request) {
+        if (createTextToImageRequest == null || createTextToImageRequest.getPrompt() == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser = userService.getLoginUser(request);
+        CreateTextToImageTaskResponse response = pictureService.createTextToImageTask(createTextToImageRequest, loginUser);
         return ResultUtils.success(response);
     }
 
@@ -426,6 +442,16 @@ public class PictureController {
     public BaseResponse<GetOutPaintingTaskResponse> getPictureOutPaintingTask(String taskId) {
         ThrowUtils.throwIf(StrUtil.isBlank(taskId), ErrorCode.PARAMS_ERROR);
         GetOutPaintingTaskResponse task = aliYunAiApi.getOutPaintingTask(taskId);
+        return ResultUtils.success(task);
+    }
+
+    /**
+     * 查询 AI 文生图任务
+     */
+    @GetMapping("/text_to_image/get_task")
+    public BaseResponse<GetTextToImageTaskResponse> getTextToImageTask(String taskId) {
+        ThrowUtils.throwIf(StrUtil.isBlank(taskId), ErrorCode.PARAMS_ERROR);
+        GetTextToImageTaskResponse task = aliYunAiApi.getTextToImageTask(taskId);
         return ResultUtils.success(task);
     }
 
@@ -480,19 +506,30 @@ public class PictureController {
         PictureCursorQueryVO result = pictureService.listPictureVOByCursor(pictureCursorQueryRequest, request);
         return ResultUtils.success(result);
     }
+
     
     /**
-     * 游标查询用户点赞的图片列表
+     * 游标查询指定用户点赞的图片列表
+     *
+     * @param userId 用户ID
+     * @param pictureCursorQueryRequest 游标查询请求
+     * @param request HTTP请求
+     * @return 图片游标查询结果
      */
-    @PostMapping("/list/liked")
-    public BaseResponse<PictureCursorQueryVO> listUserLikedPictures(@RequestBody PictureCursorQueryRequest pictureCursorQueryRequest,
-                                                                             HttpServletRequest request) {
+    @PostMapping("/list/liked/{userId}")
+    public BaseResponse<PictureCursorQueryVO> listUserLikedPictures(@PathVariable Long userId,
+                                                                          @RequestBody PictureCursorQueryRequest pictureCursorQueryRequest,
+                                                                          HttpServletRequest request) {
         // 限制爬虫
         long size = pictureCursorQueryRequest.getPageSize();
         ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
         
-        User loginUser = userService.getLoginUser(request);
-        PictureCursorQueryVO result = pictureService.listUserLikedPictures(pictureCursorQueryRequest, loginUser, request);
+        // 参数校验
+        if (userId == null || userId <= 0) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户ID不合法");
+        }
+        
+        PictureCursorQueryVO result = pictureService.listUserLikedPictures(userId, pictureCursorQueryRequest, request);
         return ResultUtils.success(result);
     }
     

@@ -200,9 +200,8 @@ public class PictureAlbumServiceImpl extends ServiceImpl<PictureAlbumMapper, Pic
         // 首先找出包含这些分类图片的收藏夹
         QueryWrapper<UserPictureInteraction> albumInteractionQueryWrapper = new QueryWrapper<>();
         albumInteractionQueryWrapper.select("albumId")
-                .inSql("pictureId", "SELECT id FROM picture WHERE category IN (" + 
-                       interestedCategories.stream().map(category -> "'" + category + "'").collect(Collectors.joining(",")) + 
-                       ")")
+                .in("pictureId", new QueryWrapper<Picture>().select("id")
+                        .in("category", interestedCategories))
                 .eq("type", 1) // 收藏类型
                 .groupBy("albumId")
                 .orderByDesc("COUNT(*)")

@@ -1,10 +1,10 @@
 package com.mushan.tucangbackend.service;
 
-
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.mushan.tucangbackend.api.aliyunai.model.CreateOutPaintingTaskResponse;
+import com.mushan.tucangbackend.api.aliyunai.model.CreateTextToImageTaskResponse;
 import com.mushan.tucangbackend.model.dto.picture.*;
 import com.mushan.tucangbackend.model.entity.Picture;
 import com.mushan.tucangbackend.model.entity.User;
@@ -78,7 +78,16 @@ public interface PictureService extends IService<Picture> {
      */
     Page<PictureVO> getPictureVOPage(Page<Picture> picturePage, HttpServletRequest request);
 
-    CreateOutPaintingTaskResponse createPictureOutPaintingTask(CreatePictureOutPaintingTaskRequest createPictureOutPaintingTaskRequest, User loginUser);
+    CreateOutPaintingTaskResponse createPictureOutPaintingTask(CreatePictureOutPaintingRequest createPictureOutPaintingRequest, User loginUser);
+    
+    /**
+     * 创建文本生成图像任务
+     *
+     * @param createTextToImageRequest
+     * @param loginUser
+     * @return
+     */
+    CreateTextToImageTaskResponse createTextToImageTask(CreateTextToImageRequest createTextToImageRequest, User loginUser);
 
     /**
      * 校验图片
@@ -130,42 +139,41 @@ public interface PictureService extends IService<Picture> {
      * @return 操作后是否收藏状态
      */
     Boolean favoritePicture(PictureFavoriteRequest pictureFavoriteRequest, User loginUser);
-    
-    /**
-     * 游标查询用户点赞的图片列表
-     * 
-     * @param pictureCursorQueryRequest 查询条件
-     * @param loginUser 当前登录用户
-     * @param request HTTP请求
-     * @return 图片游标查询结果
-     */
-    PictureCursorQueryVO listUserLikedPictures(PictureCursorQueryRequest pictureCursorQueryRequest, User loginUser, HttpServletRequest request);
+
     
     /**
      * 游标查询用户收藏的图片列表
-     * 
-     * @param pictureCursorQueryRequest 查询条件
+     *
+     * @param pictureCursorQueryRequest 游标查询请求
      * @param loginUser 当前登录用户
      * @param request HTTP请求
-     * @return 图片游标查询结果
+     * @return PictureCursorQueryVO对象
      */
     PictureCursorQueryVO listUserFavoritedPictures(PictureCursorQueryRequest pictureCursorQueryRequest, User loginUser, HttpServletRequest request);
     
     /**
-     * 游标查询指定收藏夹内的图片列表
+     * 游标查询指定用户点赞的图片列表
      * 
+     * @param userId 用户ID
+     * @param pictureCursorQueryRequest 游标查询请求
+     * @param request HTTP请求
+     * @return PictureCursorQueryVO对象
+     */
+    PictureCursorQueryVO listUserLikedPictures(Long userId, PictureCursorQueryRequest pictureCursorQueryRequest, HttpServletRequest request);
+    
+    /**
+     * 游标查询指定收藏夹内的图片列表
+     *
      * @param albumId 收藏夹ID
-     * @param pictureCursorQueryRequest 查询条件
+     * @param pictureCursorQueryRequest 游标查询请求
      * @param loginUser 当前登录用户
      * @param request HTTP请求
-     * @return 图片游标查询结果
+     * @return PictureCursorQueryVO对象
      */
     PictureCursorQueryVO listUserFavoritedPicturesByAlbum(Long albumId, PictureCursorQueryRequest pictureCursorQueryRequest, User loginUser, HttpServletRequest request);
 
-    @Transactional(rollbackFor = Exception.class)
     Boolean addPictureToAlbum(PictureFavoriteRequest pictureFavoriteRequest, User loginUser);
 
-    @Transactional(rollbackFor = Exception.class)
     Boolean removePictureFromAlbum(PictureFavoriteRequest pictureFavoriteRequest, User loginUser);
 
     /**

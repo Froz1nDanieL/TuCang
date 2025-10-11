@@ -6,7 +6,7 @@ import lombok.Data;
 import java.io.Serializable;
 
 @Data
-public class CreatePictureOutPaintingTaskRequest implements Serializable {
+public class CreatePictureOutPaintingRequest implements Serializable {
 
     /**
      * 图片 id

@@ -2,6 +2,9 @@ package com.mushan.tucangbackend.exception;
 
 import lombok.Getter;
 
+/**
+ * 自定义错误码
+ */
 @Getter
 public enum ErrorCode {
 
