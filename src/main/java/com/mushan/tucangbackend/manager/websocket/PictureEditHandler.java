@@ -12,7 +12,7 @@ import com.mushan.tucangbackend.manager.websocket.model.PictureEditRequestMessag
 import com.mushan.tucangbackend.manager.websocket.model.PictureEditResponseMessage;
 import com.mushan.tucangbackend.model.entity.User;
 import com.mushan.tucangbackend.service.UserService;
-import groovyjarjarantlr4.v4.runtime.misc.NotNull;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
