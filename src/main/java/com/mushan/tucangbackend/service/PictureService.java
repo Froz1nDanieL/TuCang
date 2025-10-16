@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.mushan.tucangbackend.api.aliyunai.model.CreateOutPaintingTaskResponse;
 import com.mushan.tucangbackend.api.aliyunai.model.CreateTextToImageTaskResponse;
+import com.mushan.tucangbackend.api.aliyunai.model.GetTextToImageTaskResponse;
 import com.mushan.tucangbackend.model.dto.picture.*;
 import com.mushan.tucangbackend.model.entity.Picture;
 import com.mushan.tucangbackend.model.entity.User;
@@ -88,6 +89,14 @@ public interface PictureService extends IService<Picture> {
      * @return
      */
     CreateTextToImageTaskResponse createTextToImageTask(CreateTextToImageRequest createTextToImageRequest, User loginUser);
+
+    /**
+     *  查询文本生成图像任务
+     *
+     *  @param taskId
+     *  @return
+     */
+    GetTextToImageTaskResponse getTextToImageTask(String taskId);
 
     /**
      * 校验图片

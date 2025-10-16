@@ -48,8 +48,15 @@ public abstract class PictureUploadTemplate {
   
         File file = null;
         try {
-            // 创建临时文件
-            file = File.createTempFile(uploadPath, null);
+            // 创建临时文件，使用安全的前缀和后缀
+            String tempPrefix = "upload_" + uuid;
+            // 确保前缀不超过Java允许的最大长度(160个字符减去后缀长度)
+            if (tempPrefix.length() > 150) {
+                tempPrefix = tempPrefix.substring(0, 150);
+            }
+            // 确保后缀以点开头且只包含合法字符
+            String tempSuffix = "." + suffix.replaceAll("[^a-zA-Z0-9]", "jpg");
+            file = File.createTempFile(tempPrefix, tempSuffix);
             // 处理文件来源（本地或 URL）
             processFile(inputSource, file);
             // 上传图片到对象存储
@@ -115,15 +122,14 @@ public abstract class PictureUploadTemplate {
         uploadPictureResult.setPicScale(picScale);
         uploadPictureResult.setPicFormat(compressedCiObject.getFormat());
         uploadPictureResult.setPicSize(compressedCiObject.getSize().longValue());
-        // 设置图片为缩略图的地址
-        uploadPictureResult.setThumbnailUrl(cosClientConfig.getHost() + "/" + thumbnailCiObject.getKey());
-        // 设置图片为压缩后的地址
-        uploadPictureResult.setUrl(cosClientConfig.getHost() + "/" + compressedCiObject.getKey());
+        // 设置图片为缩略图的地址，去除可能包含的敏感参数
+        String thumbnailUrl = cosClientConfig.getHost() + "/" + thumbnailCiObject.getKey();
+        uploadPictureResult.setThumbnailUrl(removeSensitiveParams(thumbnailUrl));
+        // 设置图片为压缩后的地址，去除可能包含的敏感参数
+        String imageUrl = cosClientConfig.getHost() + "/" + compressedCiObject.getKey();
+        uploadPictureResult.setUrl(removeSensitiveParams(imageUrl));
         return uploadPictureResult;
     }
-
-
-
 
     /**  
      * 封装返回结果  
@@ -139,10 +145,24 @@ public abstract class PictureUploadTemplate {
         uploadPictureResult.setPicScale(picScale);
         uploadPictureResult.setPicFormat(imageInfo.getFormat());
         uploadPictureResult.setPicSize(FileUtil.size(file));
-        uploadPictureResult.setUrl(cosClientConfig.getHost() + "/" + uploadPath);
+        String imageUrl = cosClientConfig.getHost() + "/" + uploadPath;
+        uploadPictureResult.setUrl(removeSensitiveParams(imageUrl));
         return uploadPictureResult;
     }  
   
+    /**
+     * 移除URL中的敏感参数
+     * @param url 包含敏感参数的URL
+     * @return 去除敏感参数后的URL
+     */
+    private String removeSensitiveParams(String url) {
+        if (StrUtil.isBlank(url)) {
+            return url;
+        }
+        // 移除常见的敏感参数
+        return url.split("\\?")[0];
+    }
+    
     /**  
      * 删除临时文件  
      */  

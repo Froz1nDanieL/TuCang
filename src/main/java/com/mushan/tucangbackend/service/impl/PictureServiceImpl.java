@@ -6,13 +6,11 @@ import cn.hutool.core.util.ObjUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mushan.tucangbackend.api.aliyunai.AliYunAiApi;
-import com.mushan.tucangbackend.api.aliyunai.model.CreateOutPaintingTaskRequest;
-import com.mushan.tucangbackend.api.aliyunai.model.CreateOutPaintingTaskResponse;
-import com.mushan.tucangbackend.api.aliyunai.model.CreateTextToImageTaskRequest;
-import com.mushan.tucangbackend.api.aliyunai.model.CreateTextToImageTaskResponse;
+import com.mushan.tucangbackend.api.aliyunai.model.*;
 import com.mushan.tucangbackend.exception.BusinessException;
 import com.mushan.tucangbackend.exception.ErrorCode;
 import com.mushan.tucangbackend.exception.ThrowUtils;
@@ -21,7 +19,9 @@ import com.mushan.tucangbackend.manager.FileManager;
 import com.mushan.tucangbackend.manager.upload.FilePictureUpload;
 import com.mushan.tucangbackend.manager.upload.PictureUploadTemplate;
 import com.mushan.tucangbackend.manager.upload.UrlPictureUpload;
+import com.mushan.tucangbackend.manager.upload.AiGenPictureUpload;
 import com.mushan.tucangbackend.mapper.UserPictureInteractionMapper;
+import com.mushan.tucangbackend.model.dto.aigenhistory.AiGenHistoryAddRequest;
 import com.mushan.tucangbackend.model.dto.file.UploadPictureResult;
 import com.mushan.tucangbackend.model.dto.picture.*;
 import com.mushan.tucangbackend.model.entity.*;
@@ -30,11 +30,8 @@ import com.mushan.tucangbackend.model.vo.PictureAlbumVO;
 import com.mushan.tucangbackend.model.vo.PictureCursorQueryVO;
 import com.mushan.tucangbackend.model.vo.PictureVO;
 import com.mushan.tucangbackend.model.vo.UserVO;
-import com.mushan.tucangbackend.service.PictureAlbumService;
-import com.mushan.tucangbackend.service.PictureService;
+import com.mushan.tucangbackend.service.*;
 import com.mushan.tucangbackend.mapper.PictureMapper;
-import com.mushan.tucangbackend.service.SpaceService;
-import com.mushan.tucangbackend.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
 import org.jsoup.internal.StringUtil;
@@ -44,6 +41,7 @@ import org.jsoup.select.Elements;
 import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,7 +50,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -79,6 +82,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     private UrlPictureUpload urlPictureUpload;
 
     @Resource
+    private AiGenPictureUpload aiGenPictureUpload;
+
+    @Resource
     private CosManager cosManager;
 
     @Resource
@@ -96,6 +102,12 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     @Lazy
     @Resource
     private PictureAlbumService pictureAlbumService;
+
+    @Resource
+    private AiGenHistoryService aiGenHistoryService;
+
+    @Resource
+    private RedisTemplate<String,Object> redisTemplate;
 
     @Override
     public PictureVO uploadPicture(Object inputSource, PictureUploadRequest pictureUploadRequest, User loginUser) {
@@ -491,6 +503,19 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
      */
     @Override
     public CreateTextToImageTaskResponse createTextToImageTask(CreateTextToImageRequest createTextToImageRequest, User loginUser) {
+        // 限制用户每天只能使用5次文生图功能
+        String redisKey = "text_to_image_limit:" + loginUser.getId() + ":" + LocalDate.now().toString();
+        Long usedCount = redisTemplate.opsForValue().increment(redisKey);
+        if (usedCount != null && usedCount == 1) {
+            // 设置过期时间为当天剩余时间
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime midnight = LocalDateTime.of(now.toLocalDate().plusDays(1), LocalTime.MIDNIGHT);
+            long expireSeconds = ChronoUnit.SECONDS.between(now, midnight);
+            redisTemplate.expire(redisKey, expireSeconds, TimeUnit.SECONDS);
+        }
+        if (usedCount != null && usedCount > 5) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "每天只能使用文生图功能5次");
+        }
         // 校验图片尺寸参数
         validateImageSize(createTextToImageRequest.getSize());
         
@@ -508,9 +533,92 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         parameters.setWatermark(createTextToImageRequest.getWatermark());
         parameters.setSeed(createTextToImageRequest.getSeed());
         taskRequest.setParameters(parameters);
-        
+
+        CreateTextToImageTaskResponse textToImageTask = aliYunAiApi.createTextToImageTask(taskRequest);
+
+        // 添加AI生成历史记录
+        AiGenHistoryAddRequest aiGenHistoryAddRequest = new AiGenHistoryAddRequest();
+        aiGenHistoryAddRequest.setPrompt(createTextToImageRequest.getPrompt());
+        aiGenHistoryAddRequest.setStatus(1);
+        aiGenHistoryAddRequest.setTaskId(textToImageTask.getOutput().getTaskId());
+        aiGenHistoryService.addAiGenHistory(aiGenHistoryAddRequest, loginUser);
+
         // 创建任务
-        return aliYunAiApi.createTextToImageTask(taskRequest);
+        return textToImageTask;
+    }
+
+    @Override
+    public GetTextToImageTaskResponse getTextToImageTask(String taskId) {
+        // 调用阿里云API获取任务状态
+        GetTextToImageTaskResponse response = aliYunAiApi.getTextToImageTask(taskId);
+
+        if (response != null && response.getOutput() != null) {
+            String taskStatus = response.getOutput().getTaskStatus();
+
+            // 根据任务状态映射到AI生成历史状态
+            if (taskStatus != null) {
+                Integer aiGenStatus = null;
+                switch (taskStatus) {
+                    case "SUCCEEDED":
+                        aiGenStatus = 2; // 成功状态
+                        break;
+                    case "FAILED":
+                        aiGenStatus = 0; // 失败状态
+                        break;
+                    case "RUNNING":
+                        aiGenStatus = 1; // 运行中状态
+                        break;
+                    default:
+                        // 对于未知状态，可以保持为运行中或根据具体需求处理
+                        aiGenStatus = 1;
+                        break;
+                }
+                
+                UpdateWrapper<AiGenHistory> updateWrapper = new UpdateWrapper<>();
+                updateWrapper.eq("taskId", taskId).set("status", aiGenStatus);
+
+                // 如果任务成功，还需要保存图片URL列表
+                if ("SUCCEEDED".equals(taskStatus) && response.getOutput().getResults() != null
+                        && !response.getOutput().getResults().isEmpty()) {
+                    // 获取生成的图片URL列表
+                    List<String> imageUrls = response.getOutput().getResults().stream()
+                            .map(result -> result.getUrl())
+                            .filter(Objects::nonNull)
+                            .collect(Collectors.toList());
+
+                    // 将生成的图片保存到对象存储中,获取保存后的URL列表（去除敏感信息）
+                    List<String> imageToSaves = saveAiGeneratedImagesToStorage(imageUrls);
+                    String imageToSaveUrls = JSONUtil.toJsonStr(imageToSaves);
+                    updateWrapper.set("imageUrl", imageToSaveUrls);
+                }
+
+                // 更新AI生成历史记录的状态
+                aiGenHistoryService.update(updateWrapper);
+            }
+        }
+        return response;
+    }
+
+    /**
+     * 将AI生成的图片保存到对象存储中
+     * @param imageUrls AI生成的图片URL列表
+     */
+    private List<String> saveAiGeneratedImagesToStorage(List<String> imageUrls) {
+        List<String> imageUrlsToSave = new ArrayList<>();
+        for (String imageUrl : imageUrls) {
+            try {
+                // 使用AiGenPictureUpload将图片从URL上传到对象存储
+                // 先下载到本地临时文件，再上传到对象存储，避免URL中的敏感参数泄露
+                // 上传路径前缀为aigen/
+                String uploadPathPrefix = "aigen";
+                UploadPictureResult uploadPictureResult = aiGenPictureUpload.uploadPicture(imageUrl, uploadPathPrefix);
+                imageUrlsToSave.add(uploadPictureResult.getUrl());
+                log.info("AI生成的图片已成功保存到对象存储: {}", imageUrl);
+            } catch (Exception e) {
+                log.error("保存AI生成的图片到对象存储失败: {}", imageUrl, e);
+            }
+        }
+        return imageUrlsToSave;
     }
 
     /**

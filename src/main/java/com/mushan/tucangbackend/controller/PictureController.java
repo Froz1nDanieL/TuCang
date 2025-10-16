@@ -449,9 +449,10 @@ public class PictureController {
      * 查询 AI 文生图任务
      */
     @GetMapping("/text_to_image/get_task")
-    public BaseResponse<GetTextToImageTaskResponse> getTextToImageTask(String taskId) {
+    public BaseResponse<GetTextToImageTaskResponse> getTextToImageTask(String taskId, HttpServletRequest request) {
         ThrowUtils.throwIf(StrUtil.isBlank(taskId), ErrorCode.PARAMS_ERROR);
-        GetTextToImageTaskResponse task = aliYunAiApi.getTextToImageTask(taskId);
+        User loginUser = userService.getLoginUser(request);
+        GetTextToImageTaskResponse task = pictureService.getTextToImageTask(taskId);
         return ResultUtils.success(task);
     }
 

@@ -46,4 +46,4 @@ knife4j:
           - com.mushan.tucangbackend.controller
 # 阿里云 AI 配置
 aliYunAi:
-  apiKey: sk-ca9bfa512be4402bae0435b0e8c88725
+  apiKey: <your apiKey>

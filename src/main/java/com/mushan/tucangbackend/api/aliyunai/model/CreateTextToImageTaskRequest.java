@@ -11,7 +11,7 @@ public class CreateTextToImageTaskRequest implements Serializable {
     /**
      * 模型名称，例如 "wanx2.0-t2i-turbo"
      */
-    private String model = "wanx2.0-t2i-turbo";
+    private String model = "wanx2.1-t2i-turbo";
 
     /**
      * 输入文本信息
