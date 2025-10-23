@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.mushan.tucangbackend.model.entity.User;
 import com.mushan.tucangbackend.model.vo.AiGenHistoryVO;
 
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -30,5 +31,13 @@ public interface AiGenHistoryService extends IService<AiGenHistory> {
      * @return AI生成历史列表
      */
     List<AiGenHistoryVO> listUserAiGenHistories(Long userId);
+    
+    /**
+     * 删除指定时间之前的记录
+     *
+     * @param beforeDate 指定时间
+     * @return 删除的记录数量
+     */
+    int deleteBefore(Date beforeDate);
 
 }

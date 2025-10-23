@@ -518,14 +518,14 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         }
         // 校验图片尺寸参数
         validateImageSize(createTextToImageRequest.getSize());
-        
+
         // 构造请求参数
         CreateTextToImageTaskRequest taskRequest = new CreateTextToImageTaskRequest();
         CreateTextToImageTaskRequest.Input input = new CreateTextToImageTaskRequest.Input();
         input.setPrompt(createTextToImageRequest.getPrompt());
         input.setNegativePrompt(createTextToImageRequest.getNegativePrompt());
         taskRequest.setInput(input);
-        
+
         CreateTextToImageTaskRequest.Parameters parameters = new CreateTextToImageTaskRequest.Parameters();
         parameters.setSize(createTextToImageRequest.getSize());
         parameters.setN(createTextToImageRequest.getN());
@@ -573,7 +573,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
                         aiGenStatus = 1;
                         break;
                 }
-                
+
                 UpdateWrapper<AiGenHistory> updateWrapper = new UpdateWrapper<>();
                 updateWrapper.eq("taskId", taskId).set("status", aiGenStatus);
 
@@ -640,11 +640,11 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         try {
             int width = Integer.parseInt(matcher.group(1));
             int height = Integer.parseInt(matcher.group(2));
-            
+
             if (width < 512 || width > 1440) {
                 throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片宽度必须在512-1440之间");
             }
-            
+
             if (height < 512 || height > 1440) {
                 throw new BusinessException(ErrorCode.PARAMS_ERROR, "图片高度必须在512-1440之间");
             }
@@ -1073,50 +1073,50 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
         return buildPictureCursorQueryVO(pictureList, size, request);
     }
-    
+
     @Override
     public PictureCursorQueryVO listUserFavoritedPictures(PictureCursorQueryRequest pictureCursorQueryRequest, User loginUser, HttpServletRequest request) {
         // 限制每次查询的数据量
         long size = pictureCursorQueryRequest.getPageSize();
         ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
-        
+
         // 构造查询条件
         QueryWrapper<Picture> queryWrapper = this.getQueryWrapperForCursor(pictureCursorQueryRequest);
-        
+
         // 添加用户收藏条件
         queryWrapper.inSql("id", "SELECT pictureId FROM user_picture_interaction WHERE userId = " + loginUser.getId() + " AND type = 1");
 
         // 查询数据
         List<Picture> pictureList = this.list(queryWrapper.last("LIMIT " + size));
-        
+
         return buildPictureCursorQueryVO(pictureList, size, request);
     }
-    
+
     @Override
     public PictureCursorQueryVO listUserFavoritedPicturesByAlbum(Long albumId, PictureCursorQueryRequest pictureCursorQueryRequest, User loginUser, HttpServletRequest request) {
         // 限制每次查询的数据量
         long size = pictureCursorQueryRequest.getPageSize();
         ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
-        
+
         // 构造查询条件
         QueryWrapper<Picture> queryWrapper = this.getQueryWrapperForCursor(pictureCursorQueryRequest);
-        
+
         // 查询指定收藏夹内的所有图片
         queryWrapper.inSql("id", "SELECT pictureId FROM user_picture_interaction WHERE albumId = " + albumId + " AND type = 1 AND isDelete = 0");
 
-        
+
         // 查询数据
         List<Picture> pictureList = this.list(queryWrapper.last("LIMIT " + size));
-        
+
         // 增加收藏夹浏览数
         pictureAlbumService.increaseViewCount(albumId);
-        
+
         return buildPictureCursorQueryVO(pictureList, size, request);
     }
-    
+
     /**
      * 构建PictureCursorQueryVO对象
-     * 
+     *
      * @param pictureList 图片列表
      * @param size 查询数量
      * @param request HTTP请求
@@ -1130,14 +1130,14 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             result.setHasMore(false);
             return result;
         }
-        
+
         // 转换为VO对象
         List<PictureVO> pictureVOList = pictureList.stream()
                 .map(picture -> this.getPictureVO(picture, request))
                 .collect(Collectors.toList());
-        
+
         result.setPictureList(pictureVOList);
-        
+
         // 计算下一个游标
         if (pictureList.size() < size) {
             result.setNextCursorId(null);
@@ -1147,7 +1147,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             result.setNextCursorId(lastPicture.getId());
             result.setHasMore(true);
         }
-        
+
         return result;
     }
 
@@ -1278,16 +1278,16 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         if (picture == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
         }
-        
+
         // 查询当前用户的所有收藏夹
         QueryWrapper<PictureAlbum> albumQueryWrapper = new QueryWrapper<>();
         albumQueryWrapper.eq("userId", loginUser.getId());
         List<PictureAlbum> albums = pictureAlbumService.list(albumQueryWrapper);
-        
+
         if (albums.isEmpty()) {
             return new ArrayList<>();
         }
-        
+
         // 查询用户将该图片收藏到的所有收藏夹记录
         QueryWrapper<UserPictureInteraction> interactionQueryWrapper = new QueryWrapper<>();
         interactionQueryWrapper.eq("userId", loginUser.getId())
@@ -1295,12 +1295,12 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
                 .eq("type", 1) // 1 表示收藏
                 .isNotNull("albumId"); // 确保有指定收藏夹
         List<UserPictureInteraction> interactions = userPictureInteractionMapper.selectList(interactionQueryWrapper);
-        
+
         // 创建已收藏的收藏夹ID集合
         Set<Long> favoritedAlbumIds = interactions.stream()
                 .map(UserPictureInteraction::getAlbumId)
                 .collect(Collectors.toSet());
-        
+
         // 转换为VO对象并设置收藏状态
         return albums.stream().map(album -> {
             PictureAlbumVO albumVO = new PictureAlbumVO();
@@ -1322,20 +1322,20 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     @Override
     public List<Picture> getHotPicturesByPopularity(String category, int limit) {
         QueryWrapper<Picture> queryWrapper = new QueryWrapper<>();
-        queryWrapper.select("id", "url", "thumbnailUrl", "name", "introduction", 
-                           "category", "tags", "picSize", "picWidth", "picHeight", 
-                           "picScale", "picFormat", "userId", "spaceId", "createTime", 
-                           "editTime", "updateTime", "reviewStatus", "reviewMessage", 
-                           "reviewerId", "reviewTime", "likeCount", "favoriteCount", "isDelete",
-                           "(likeCount * 0.6 + favoriteCount * 0.4) AS hotScore")
+        queryWrapper.select("id", "url", "thumbnailUrl", "name", "introduction",
+                        "category", "tags", "picSize", "picWidth", "picHeight",
+                        "picScale", "picFormat", "userId", "spaceId", "createTime",
+                        "editTime", "updateTime", "reviewStatus", "reviewMessage",
+                        "reviewerId", "reviewTime", "likeCount", "favoriteCount", "isDelete",
+                        "(likeCount * 0.6 + favoriteCount * 0.4) AS hotScore")
                 .eq("category", category)
                 .eq("reviewStatus", 1) // 已审核通过的图片
                 .eq("isDelete", 0) // 未删除的图片
                 .apply("(likeCount * 0.6 + favoriteCount * 0.4) > 0") // 热度大于0
                 .orderByDesc("(likeCount * 0.6 + favoriteCount * 0.4)") // 按热度降序排列
                 .last("LIMIT " + limit);
-        
+
         return this.list(queryWrapper);
     }
-    
+
 }

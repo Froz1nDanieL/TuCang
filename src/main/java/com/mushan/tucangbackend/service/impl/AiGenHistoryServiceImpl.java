@@ -8,6 +8,7 @@ import com.mushan.tucangbackend.model.vo.AiGenHistoryVO;
 import com.mushan.tucangbackend.service.AiGenHistoryService;
 import com.mushan.tucangbackend.mapper.AiGenHistoryMapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Service;
 import cn.hutool.json.JSONUtil;
 
@@ -39,10 +40,21 @@ public class AiGenHistoryServiceImpl extends ServiceImpl<AiGenHistoryMapper, AiG
 
     @Override
     public List<AiGenHistoryVO> listUserAiGenHistories(Long userId) {
+        // 计算三天前的时间
+        Date threeDaysAgo = new Date(System.currentTimeMillis() - 3L * 24 * 60 * 60 * 1000);
+        
         QueryWrapper<AiGenHistory> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("userId", userId);
+        queryWrapper.gt("createTime", threeDaysAgo); // 只查询三天内的记录
         queryWrapper.orderByDesc("createTime");
         return this.list(queryWrapper).stream().map(this::convertToVO).collect(Collectors.toList());
+    }
+    
+    @Override
+    public int deleteBefore(Date beforeDate) {
+        UpdateWrapper<AiGenHistory> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.lt("createTime", beforeDate);
+        return this.getBaseMapper().delete(updateWrapper);
     }
     
     /**

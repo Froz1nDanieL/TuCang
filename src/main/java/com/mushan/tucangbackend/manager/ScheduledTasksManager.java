@@ -4,6 +4,7 @@ import cn.hutool.json.JSONUtil;
 import com.mushan.tucangbackend.model.entity.Picture;
 import com.mushan.tucangbackend.model.entity.PictureAlbum;
 import com.mushan.tucangbackend.model.entity.User;
+import com.mushan.tucangbackend.service.AiGenHistoryService;
 import com.mushan.tucangbackend.service.PictureAlbumService;
 import com.mushan.tucangbackend.service.PictureService;
 import com.mushan.tucangbackend.service.UserService;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -148,4 +150,27 @@ public class ScheduledTasksManager {
             log.error("执行用户个性化推荐收藏夹定时任务时发生错误", e);
         }
     }
+
+    /**
+     * 定期删除三天外Ai文生图记录
+     * 每天凌晨0点执行一次
+     */
+    @Scheduled(cron = "0 0 0 * * ?")
+    public void deleteAiTextToImageRecordsTask() {
+        log.info("开始执行定期删除三天外Ai文生图记录任务");
+        try {
+            // 计算三天前的时间
+            Date threeDaysAgo = new Date(System.currentTimeMillis() - 3L * 24 * 60 * 60 * 1000);
+            
+            // 删除三天前的记录
+            int deletedCount = aiGenHistoryService.deleteBefore(threeDaysAgo);
+            log.info("已删除 {} 条三天外的Ai文生图记录", deletedCount);
+        } catch (Exception e) {
+            log.error("执行定期删除三天外Ai文生图记录任务时发生错误", e);
+        }
+    }
+    
+    @Resource
+    private AiGenHistoryService aiGenHistoryService;
+    
 }
