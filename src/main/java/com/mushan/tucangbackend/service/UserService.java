@@ -1,10 +1,12 @@
 package com.mushan.tucangbackend.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.mushan.tucangbackend.model.dto.user.UserCursorQueryRequest;
 import com.mushan.tucangbackend.model.dto.user.UserQueryRequest;
 import com.mushan.tucangbackend.model.entity.User;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.mushan.tucangbackend.model.vo.LoginUserVO;
+import com.mushan.tucangbackend.model.vo.UserCursorQueryVO;
 import com.mushan.tucangbackend.model.vo.UserVO;
 
 import javax.servlet.http.HttpServletRequest;
@@ -83,5 +85,19 @@ public interface UserService extends IService<User> {
      */
     boolean isAdmin(User user);
 
+    /**
+     * 获取活跃用户排行榜（按上传图片数量）
+     *
+     * @param cursorQueryRequest 游标查询请求
+     * @return 用户排行榜
+     */
+    UserCursorQueryVO getActiveUserRanking(UserCursorQueryRequest cursorQueryRequest);
 
+    /**
+     * 获取热门用户排行榜（按被点赞和收藏数）
+     *
+     * @param cursorQueryRequest 游标查询请求
+     * @return 用户排行榜
+     */
+    UserCursorQueryVO getPopularUserRanking(UserCursorQueryRequest cursorQueryRequest);
 }

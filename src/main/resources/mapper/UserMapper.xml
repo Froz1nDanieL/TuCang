@@ -22,4 +22,58 @@
         id,userAccount,userPassword,userName,userAvatar,userProfile,
         userRole,editTime,createTime,updateTime,isDelete
     </sql>
+    
+    <!-- 查询最活跃用户（基于创建图片数量） -->
+    <select id="getActiveUserRanking" resultType="com.mushan.tucangbackend.model.entity.User">
+        SELECT u.id, u.userAccount, u.userName, u.userAvatar, u.userProfile,
+               u.userRole
+        FROM user u
+        INNER JOIN (
+            SELECT userId, COUNT(*) as pictureCount
+            FROM picture
+            WHERE isDelete = 0 AND reviewStatus = 1 AND spaceId IS NULL
+            GROUP BY userId
+        ) p ON u.id = p.userId
+        WHERE u.isDelete = 0
+        <if test="cursorId != null">
+            AND u.id &lt; #{cursorId}
+        </if>
+        ORDER BY p.pictureCount DESC, u.id DESC
+        LIMIT #{limit}
+    </select>
+    
+    <!-- 查询热门用户（基于创建图片的点赞数和收藏数之和） -->
+    <select id="getPopularUserRanking" resultType="com.mushan.tucangbackend.model.entity.User">
+        SELECT u.id, u.userAccount, u.userName, u.userAvatar, u.userProfile,
+               u.userRole
+        FROM user u
+        INNER JOIN (
+            SELECT p.userId, 
+                   SUM(COALESCE(p.likeCount, 0) + COALESCE(p.favoriteCount, 0)) as heatValue
+            FROM picture p
+            WHERE p.isDelete = 0 AND p.reviewStatus = 1 AND p.spaceId IS NULL
+            GROUP BY p.userId
+            HAVING heatValue > 0
+        ) p ON u.id = p.userId
+        WHERE u.isDelete = 0
+        <if test="cursorId != null">
+            AND u.id &lt; #{cursorId}
+        </if>
+        ORDER BY p.heatValue DESC, u.id DESC
+        LIMIT #{limit}
+    </select>
+    
+    <!-- 查询用户创建的图片数量 -->
+    <select id="getUserPictureCount" resultType="java.lang.Integer">
+        SELECT COUNT(*) 
+        FROM picture
+        WHERE userId = #{userId} AND isDelete = 0 AND reviewStatus = 1 AND spaceId IS NULL
+    </select>
+    
+    <!-- 查询用户的热度值（点赞数和收藏数之和） -->
+    <select id="getUserHeatValue" resultType="java.lang.Integer">
+        SELECT SUM(COALESCE(likeCount, 0) + COALESCE(favoriteCount, 0))
+        FROM picture
+        WHERE userId = #{userId} AND isDelete = 0 AND reviewStatus = 1 AND spaceId IS NULL
+    </select>
 </mapper>

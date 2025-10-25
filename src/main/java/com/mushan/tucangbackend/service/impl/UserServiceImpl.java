@@ -5,26 +5,34 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mushan.tucangbackend.exception.BusinessException;
 import com.mushan.tucangbackend.exception.ErrorCode;
 import com.mushan.tucangbackend.manager.auth.StpKit;
+import com.mushan.tucangbackend.model.dto.user.UserCursorQueryRequest;
 import com.mushan.tucangbackend.model.dto.user.UserQueryRequest;
 import com.mushan.tucangbackend.model.entity.User;
 import com.mushan.tucangbackend.model.enums.UserRoleEnum;
 import com.mushan.tucangbackend.model.vo.LoginUserVO;
+import com.mushan.tucangbackend.model.vo.UserCursorQueryVO;
 import com.mushan.tucangbackend.model.vo.UserVO;
 import com.mushan.tucangbackend.service.UserService;
 import com.mushan.tucangbackend.mapper.UserMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 
 import javax.servlet.http.HttpServletRequest;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static com.mushan.tucangbackend.constant.UserConstant.USER_LOGIN_STATE;
@@ -174,6 +182,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
         UserVO userVO = new UserVO();
         BeanUtils.copyProperties(user, userVO);
+        
+        // 查询用户的图片数量和热度值
+        Long userId = user.getId();
+        if (userId != null) {
+            Integer pictureCount = this.baseMapper.getUserPictureCount(userId);
+            Integer heatValue = this.baseMapper.getUserHeatValue(userId);
+            userVO.setPictureCount(pictureCount != null ? pictureCount : 0);
+            userVO.setHeatValue(heatValue != null ? heatValue : 0);
+        }
+        
         return userVO;
     }
 
@@ -211,9 +229,71 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return user != null && UserRoleEnum.ADMIN.getValue().equals(user.getUserRole());
     }
 
+    @Override
+    public UserCursorQueryVO getActiveUserRanking(UserCursorQueryRequest cursorQueryRequest) {
+        // 设置默认分页大小
+        int pageSize = cursorQueryRequest.getPageSize();
+        if (pageSize <= 0) {
+            pageSize = 10;
+        }
+        pageSize = Math.min(pageSize, 20); // 限制最大分页大小
 
+        // 通过联表查询统计用户创建的图片数量，并按数量排序
+        List<User> userList = this.baseMapper.getActiveUserRanking(cursorQueryRequest.getCursorId(), pageSize);
+        
+        // 构建返回结果
+        return buildUserCursorQueryVO(userList, pageSize);
+    }
+
+    @Override
+    public UserCursorQueryVO getPopularUserRanking(UserCursorQueryRequest cursorQueryRequest) {
+        // 设置默认分页大小
+        int pageSize = cursorQueryRequest.getPageSize();
+        if (pageSize <= 0) {
+            pageSize = 10;
+        }
+        pageSize = Math.min(pageSize, 20); // 限制最大分页大小
+        
+        // 通过联表查询统计用户创建的图片的热度值（点赞数+收藏数），并按热度值排序
+        List<User> userList = this.baseMapper.getPopularUserRanking(cursorQueryRequest.getCursorId(), pageSize);
+        
+        // 构建返回结果
+        return buildUserCursorQueryVO(userList, pageSize);
+    }
+    
+    /**
+     * 构建UserCursorQueryVO对象
+     *
+     * @param userList 用户列表
+     * @param pageSize 页面大小
+     * @return UserCursorQueryVO对象
+     */
+    private UserCursorQueryVO buildUserCursorQueryVO(List<User> userList, int pageSize) {
+        UserCursorQueryVO result = new UserCursorQueryVO();
+        if (CollUtil.isEmpty(userList)) {
+            result.setUserList(new ArrayList<>());
+            result.setNextCursorId(null);
+            result.setHasMore(false);
+            return result;
+        }
+
+        // 转换为VO对象
+        List<UserVO> userVOList = userList.stream()
+                .map(this::getUserVO)
+                .collect(Collectors.toList());
+
+        result.setUserList(userVOList);
+
+        // 计算下一个游标
+        if (userList.size() < pageSize) {
+            result.setNextCursorId(null);
+            result.setHasMore(false);
+        } else {
+            User lastUser = userList.get(userList.size() - 1);
+            result.setNextCursorId(lastUser.getId());
+            result.setHasMore(true);
+        }
+
+        return result;
+    }
 }
-
-
-
-

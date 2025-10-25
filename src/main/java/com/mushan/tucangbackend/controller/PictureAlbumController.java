@@ -439,15 +439,15 @@ public class PictureAlbumController {
     @GetMapping("/hot/system")
     public BaseResponse<List<PictureAlbum>> listSystemHotPictureAlbums(
             @RequestParam(required = false, defaultValue = "10") Integer limit) {
+        
+        // 首先尝试从缓存中获取系统热门收藏夹
+        List<PictureAlbum> hotAlbums = pictureAlbumService.getSystemHotAlbumsFromCache(limit);
+        
+        // 如果缓存中没有，则实时计算
+        if (hotAlbums == null) {
+            hotAlbums = pictureAlbumService.getSystemHotAlbums(limit);
+        }
 
-        // 构造查询条件：系统用户创建的热门收藏夹
-        QueryWrapper<PictureAlbum> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("userId", SYSTEM_ADMIN_USER_ID) // 系统用户ID
-                .eq("isPublic", 1) // 公开的收藏夹
-                .orderByDesc("createTime") // 按浏览量排序
-                .last("LIMIT " + limit);
-
-        List<PictureAlbum> hotAlbums = pictureAlbumService.list(queryWrapper);
         return ResultUtils.success(hotAlbums);
     }
     

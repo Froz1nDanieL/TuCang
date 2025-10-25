@@ -42,6 +42,16 @@ public class UserVO implements Serializable {
      * 创建时间
      */
     private Date createTime;
+    
+    /**
+     * 热度值（用户创建的所有审核通过且在公开图库中的图片的点赞数和收藏数之和）
+     */
+    private Integer heatValue;
+    
+    /**
+     * 上传图片数量
+     */
+    private Integer pictureCount;
 
     private static final long serialVersionUID = 1L;
 }

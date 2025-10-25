@@ -94,4 +94,28 @@ public interface PictureAlbumService extends IService<PictureAlbum> {
      * @return 用户推荐收藏夹列表
      */
     List<PictureAlbum> getUserRecommendedAlbumsFromCache(Long userId, int limit);
+    
+    /**
+     * 获取系统热门收藏夹列表
+     * 
+     * @param limit 限制数量
+     * @return 系统热门收藏夹列表
+     */
+    List<PictureAlbum> getSystemHotAlbums(int limit);
+    
+    /**
+     * 保存系统热门收藏夹到缓存
+     * 
+     * @param hotAlbums 热门收藏夹列表
+     * @return boolean 是否保存成功
+     */
+    boolean saveSystemHotAlbums(List<PictureAlbum> hotAlbums);
+    
+    /**
+     * 从缓存中获取系统热门收藏夹
+     * 
+     * @param limit 限制数量
+     * @return 系统热门收藏夹列表
+     */
+    List<PictureAlbum> getSystemHotAlbumsFromCache(int limit);
 }

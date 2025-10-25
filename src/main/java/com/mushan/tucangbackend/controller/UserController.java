@@ -12,6 +12,7 @@ import com.mushan.tucangbackend.exception.ThrowUtils;
 import com.mushan.tucangbackend.model.dto.user.*;
 import com.mushan.tucangbackend.model.entity.User;
 import com.mushan.tucangbackend.model.vo.LoginUserVO;
+import com.mushan.tucangbackend.model.vo.UserCursorQueryVO;
 import com.mushan.tucangbackend.model.vo.UserVO;
 import com.mushan.tucangbackend.service.UserService;
 import org.springframework.beans.BeanUtils;
@@ -169,6 +170,39 @@ public class UserController {
         return ResultUtils.success(userVOPage);
     }
 
+    /**
+     * 获取活跃用户排行榜（按上传图片数量）
+     *
+     * @param cursorId 游标ID，用于分页查询
+     * @param pageSize 页面大小
+     * @return 用户排行榜
+     */
+    @GetMapping("/list/ranking/active")
+    public BaseResponse<UserCursorQueryVO> getActiveUserRanking(Long cursorId, Integer pageSize) {
+        UserCursorQueryRequest cursorQueryRequest = new UserCursorQueryRequest();
+        cursorQueryRequest.setCursorId(cursorId);
+        if (pageSize != null) {
+            cursorQueryRequest.setPageSize(pageSize);
+        }
+        UserCursorQueryVO userCursorQueryVO = userService.getActiveUserRanking(cursorQueryRequest);
+        return ResultUtils.success(userCursorQueryVO);
+    }
 
-
+    /**
+     * 获取热门用户排行榜（按被点赞和收藏数）
+     *
+     * @param cursorId 游标ID，用于分页查询
+     * @param pageSize 页面大小
+     * @return 用户排行榜
+     */
+    @GetMapping("/list/ranking/popular")
+    public BaseResponse<UserCursorQueryVO> getPopularUserRanking(Long cursorId, Integer pageSize) {
+        UserCursorQueryRequest cursorQueryRequest = new UserCursorQueryRequest();
+        cursorQueryRequest.setCursorId(cursorId);
+        if (pageSize != null) {
+            cursorQueryRequest.setPageSize(pageSize);
+        }
+        UserCursorQueryVO userCursorQueryVO = userService.getPopularUserRanking(cursorQueryRequest);
+        return ResultUtils.success(userCursorQueryVO);
+    }
 }

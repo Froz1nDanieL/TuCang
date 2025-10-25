@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import static com.mushan.tucangbackend.manager.ScheduledTasksManager.SYSTEM_ADMIN_USER_ID;
+
 /**
 * @author Danie
 * @description 针对表【picture_album】的数据库操作Service实现
@@ -316,6 +318,54 @@ public class PictureAlbumServiceImpl extends ServiceImpl<PictureAlbumMapper, Pic
         } catch (Exception e) {
             throw new RuntimeException("更新收藏夹中的图片时发生错误", e);
         }
+    }
+    
+    @Override
+    public List<PictureAlbum> getSystemHotAlbums(int limit) {
+        // 获取系统创建的热门收藏夹
+        QueryWrapper<PictureAlbum> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("userId", SYSTEM_ADMIN_USER_ID) // 系统用户ID
+                .eq("isPublic", 1) // 公开的收藏夹
+                .orderByDesc("viewCount") // 按浏览量排序
+                .last("LIMIT " + limit);
+
+        return this.list(queryWrapper);
+    }
+    
+    @Override
+    public boolean saveSystemHotAlbums(List<PictureAlbum> hotAlbums) {
+        // 将系统热门收藏夹存储到Redis缓存中
+        String key = "system:hot:albums";
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
+        
+        // 将热门收藏夹列表转换为JSON字符串存储
+        String json = JSONUtil.toJsonStr(hotAlbums);
+        
+        // 存储到Redis，设置24小时过期时间
+        ops.set(key, json, 24, TimeUnit.HOURS);
+        
+        return true;
+    }
+    
+    @Override
+    public List<PictureAlbum> getSystemHotAlbumsFromCache(int limit) {
+        String key = "system:hot:albums";
+        ValueOperations<String, String> ops = redisTemplate.opsForValue();
+        
+        String json = ops.get(key);
+        if (json != null) {
+            // 从缓存中获取数据
+            List<PictureAlbum> albums = JSONUtil.toList(json, PictureAlbum.class);
+            
+            // 如果limit小于列表大小，则截取前limit个元素
+            if (limit < albums.size()) {
+                return albums.subList(0, limit);
+            }
+            return albums;
+        }
+        
+        // 缓存中没有数据，返回null表示需要重新计算
+        return null;
     }
     
     /**

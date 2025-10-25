@@ -14,11 +14,14 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+
+import static com.mushan.tucangbackend.manager.ScheduledTasksManager.SYSTEM_ADMIN_USER_ID;
 
 /**
  * 定时任务管理器
@@ -47,6 +50,106 @@ public class ScheduledTasksManager {
     private static final List<String> HOT_PICTURE_CATEGORIES = Arrays.asList(
         "风景", "人物", "绘画"
     );
+
+    /**
+     * 应用启动时初始化缓存数据
+     */
+    @PostConstruct
+    public void initializeCacheOnStartup() {
+        log.info("开始初始化缓存数据");
+        try {
+            // 初始化每日精选收藏夹缓存
+            initializeFeaturedAlbumsCache();
+            
+            // 初始化热门图片收藏夹缓存
+            initializeHotPictureAlbumsCache();
+            
+            // 初始化系统热门收藏夹缓存
+            initializeSystemHotAlbumsCache();
+            
+            log.info("缓存数据初始化完成");
+        } catch (Exception e) {
+            log.error("初始化缓存数据时发生错误", e);
+        }
+    }
+    
+    /**
+     * 初始化每日精选收藏夹缓存
+     */
+    private void initializeFeaturedAlbumsCache() {
+        try {
+            log.info("开始初始化每日精选收藏夹缓存");
+            // 获取精选收藏夹列表（例如前10个）
+            List<PictureAlbum> featuredAlbums = pictureAlbumService.getFeaturedAlbums(10);
+            log.info("获取到 {} 个精选收藏夹", featuredAlbums.size());
+            
+            // 保存每日精选收藏夹到缓存
+            boolean saved = pictureAlbumService.saveDailyFeaturedAlbums(featuredAlbums);
+            if (saved) {
+                log.info("每日精选收藏夹已保存到缓存");
+            } else {
+                log.warn("每日精选收藏夹保存到缓存失败");
+            }
+        } catch (Exception e) {
+            log.error("初始化每日精选收藏夹缓存时发生错误", e);
+        }
+    }
+    
+    /**
+     * 初始化系统热门收藏夹缓存
+     */
+    private void initializeSystemHotAlbumsCache() {
+        try {
+            log.info("开始初始化系统热门收藏夹缓存");
+            // 获取系统热门收藏夹列表
+            List<PictureAlbum> hotAlbums = pictureAlbumService.getSystemHotAlbums(10);
+            log.info("获取到 {} 个系统热门收藏夹", hotAlbums.size());
+            
+            // 保存系统热门收藏夹到缓存
+            boolean saved = pictureAlbumService.saveSystemHotAlbums(hotAlbums);
+            if (saved) {
+                log.info("系统热门收藏夹已保存到缓存");
+            } else {
+                log.warn("系统热门收藏夹保存到缓存失败");
+            }
+        } catch (Exception e) {
+            log.error("初始化系统热门收藏夹缓存时发生错误", e);
+        }
+    }
+    
+    /**
+     * 初始化热门图片收藏夹缓存
+     */
+    private void initializeHotPictureAlbumsCache() {
+        log.info("开始初始化热门图片收藏夹缓存");
+        try {
+            // 为每个分类创建或更新热门图片收藏夹
+            for (String category : HOT_PICTURE_CATEGORIES) {
+                try {
+                    String albumName = "热门" + category + "图片";
+                    // 创建或更新系统热门收藏夹
+                    PictureAlbum hotAlbum = pictureAlbumService.createOrUpdateSystemHotAlbum(
+                        category, albumName, SYSTEM_ADMIN_USER_ID);
+                    log.info("已创建/更新热门{}图片收藏夹，ID: {}", category, hotAlbum.getId());
+                    
+                    // 获取该分类下按热度排序的图片（基于点赞数和收藏数的权重算法）
+                    List<Picture> hotPictures = pictureService.getHotPicturesByPopularity(category, 20);
+                    log.info("获取到 {} 张热门{}图片", hotPictures.size(), category);
+                    
+                    // 更新收藏夹中的图片
+                    pictureAlbumService.updateAlbumWithHotPictures(hotAlbum.getId(), hotPictures);
+                    log.info("已更新收藏夹 {} 中的图片", hotAlbum.getId());
+                    
+                } catch (Exception e) {
+                    log.error("处理 {} 分类热门图片收藏夹时发生错误", category, e);
+                }
+            }
+            
+            log.info("热门图片收藏夹缓存初始化完成");
+        } catch (Exception e) {
+            log.error("初始化热门图片收藏夹缓存时发生错误", e);
+        }
+    }
 
     /**
      * 每日精选收藏夹定时任务
