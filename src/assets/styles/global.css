@@ -1,0 +1,7 @@
+/* 全局字体设置 */
+@font-face {
+  font-family: 'LogoFont';
+  src: url('../fonts/Logo1.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
