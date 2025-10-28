@@ -2,12 +2,14 @@ package com.mushan.tucangbackend.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.mushan.tucangbackend.model.dto.user.UserCursorQueryRequest;
+import com.mushan.tucangbackend.model.dto.user.UserEditRequest;
 import com.mushan.tucangbackend.model.dto.user.UserQueryRequest;
 import com.mushan.tucangbackend.model.entity.User;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.mushan.tucangbackend.model.vo.LoginUserVO;
 import com.mushan.tucangbackend.model.vo.UserCursorQueryVO;
 import com.mushan.tucangbackend.model.vo.UserVO;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -45,6 +47,22 @@ public interface UserService extends IService<User> {
      * @return 脱敏后的用户信息
      */
     LoginUserVO userLogin(String userAccount, String userPassword, HttpServletRequest request);
+
+    /**
+     * 编辑用户信息
+     * @param loginUser 当前登录用户
+     * @param userEditRequest 用户编辑请求
+     * @return 是否编辑成功
+     */
+    Boolean editUser(User loginUser, UserEditRequest userEditRequest);
+
+    /**
+     * 上传用户头像
+     * @param loginUser 当前登录用户
+     * @param avatar 头像文件
+     * @return 头像URL
+     */
+    String uploadAvatar(User loginUser, MultipartFile avatar);
 
     /**
      * 获取当前登录用户
@@ -100,4 +118,5 @@ public interface UserService extends IService<User> {
      * @return 用户排行榜
      */
     UserCursorQueryVO getPopularUserRanking(UserCursorQueryRequest cursorQueryRequest);
+
 }

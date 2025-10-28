@@ -118,4 +118,11 @@ public interface PictureAlbumService extends IService<PictureAlbum> {
      * @return 系统热门收藏夹列表
      */
     List<PictureAlbum> getSystemHotAlbumsFromCache(int limit);
+    
+    /**
+     * 删除收藏夹及其图片
+     *
+     * @param albumId 收藏夹ID
+     */
+    boolean deleteAlbumWithPictures(Long albumId);
 }

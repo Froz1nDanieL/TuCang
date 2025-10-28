@@ -16,6 +16,8 @@ import com.mushan.tucangbackend.exception.ErrorCode;
 import com.mushan.tucangbackend.exception.ThrowUtils;
 import com.mushan.tucangbackend.manager.CosManager;
 import com.mushan.tucangbackend.manager.FileManager;
+import com.mushan.tucangbackend.manager.auth.SpaceUserAuthManager;
+import com.mushan.tucangbackend.manager.auth.model.SpaceUserPermissionConstant;
 import com.mushan.tucangbackend.manager.upload.FilePictureUpload;
 import com.mushan.tucangbackend.manager.upload.PictureUploadTemplate;
 import com.mushan.tucangbackend.manager.upload.UrlPictureUpload;
@@ -109,6 +111,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     @Resource
     private RedisTemplate<String,Object> redisTemplate;
 
+    @Resource
+    private SpaceUserAuthManager spaceUserAuthManager;
+
     @Override
     public PictureVO uploadPicture(Object inputSource, PictureUploadRequest pictureUploadRequest, User loginUser) {
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
@@ -116,11 +121,14 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         Long spaceId = pictureUploadRequest.getSpaceId();
         // 空间权限校验
         if (spaceId != null) {
+            // 2. 校验空间权限
             Space space = spaceService.getById(spaceId);
             ThrowUtils.throwIf(space == null, ErrorCode.NOT_FOUND_ERROR, "空间不存在");
-            // 必须空间创建人（管理员）才能上传
-            if (!loginUser.getId().equals(space.getUserId())) {
-                throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有空间权限");
+            // 必须空间创建人（管理员）或空间编辑者才能上传
+            List<String> permissionList = spaceUserAuthManager.getPermissionList(space, loginUser);
+            if (!loginUser.getId().equals(space.getUserId()) && 
+                !permissionList.contains("picture:upload")) {
+                throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有空间访问权限");
             }
             // 校验额度
             if (space.getTotalCount() >= space.getMaxCount()) {
@@ -141,7 +149,17 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             Picture oldPicture = this.getById(pictureId);
             ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR, "图片不存在");
             // 仅本人或管理员可编辑
-            if (!oldPicture.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
+            // 获取空间信息以检查权限
+            Space space = null;
+            if (oldPicture.getSpaceId() != null) {
+                space = spaceService.getById(oldPicture.getSpaceId());
+            }
+            
+            // 检查权限：如果当前用户具有编辑权限就可以编辑
+            List<String> permissionList = spaceUserAuthManager.getPermissionList(space, loginUser);
+            if (!oldPicture.getUserId().equals(loginUser.getId()) 
+                    && !userService.isAdmin(loginUser)
+                    && !permissionList.contains(SpaceUserPermissionConstant.PICTURE_EDIT)) {
                 throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
             }
             // 校验空间是否一致

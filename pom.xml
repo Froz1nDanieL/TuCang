@@ -158,7 +158,6 @@
                 <version>${spring-boot.version}</version>
                 <configuration>
                     <mainClass>com.mushan.tucangbackend.TuCangBackendApplication</mainClass>
-                    <skip>true</skip>
                 </configuration>
                 <executions>
                     <execution>

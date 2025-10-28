@@ -11,8 +11,12 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mushan.tucangbackend.exception.BusinessException;
 import com.mushan.tucangbackend.exception.ErrorCode;
+import com.mushan.tucangbackend.exception.ThrowUtils;
 import com.mushan.tucangbackend.manager.auth.StpKit;
+import com.mushan.tucangbackend.manager.upload.FilePictureUpload;
+import com.mushan.tucangbackend.model.dto.file.UploadPictureResult;
 import com.mushan.tucangbackend.model.dto.user.UserCursorQueryRequest;
+import com.mushan.tucangbackend.model.dto.user.UserEditRequest;
 import com.mushan.tucangbackend.model.dto.user.UserQueryRequest;
 import com.mushan.tucangbackend.model.entity.User;
 import com.mushan.tucangbackend.model.enums.UserRoleEnum;
@@ -26,7 +30,9 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 
 import java.util.ArrayList;
@@ -46,6 +52,9 @@ import static com.mushan.tucangbackend.constant.UserConstant.USER_LOGIN_STATE;
 @Slf4j
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
 
+    @Resource
+    private FilePictureUpload filePictureUpload;
+    
     /**
      * 用户注册
      * @param userAccount   用户账户
@@ -132,6 +141,32 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         StpKit.SPACE.login(user.getId());
         StpKit.SPACE.getSession().set(USER_LOGIN_STATE, user);
         return this.getLoginUserVO(user);
+    }
+
+    @Override
+    public Boolean editUser(User loginUser,UserEditRequest userEditRequest){
+        Long id = loginUser.getId();
+        ThrowUtils.throwIf(id == null, ErrorCode.PARAMS_ERROR, "用户不存在");
+        User user = this.getById(id);
+        
+        // 更新用户信息
+        String userName = userEditRequest.getUserName();
+        String userProfile = userEditRequest.getUserProfile();
+        String userAvatar = userEditRequest.getUserAvatar();
+
+        user.setUserName(userName);
+        user.setUserProfile(userProfile);
+        user.setUserAvatar(userAvatar);
+
+        user.setEditTime(new Date());
+        return this.updateById(user);
+    }
+
+    @Override
+    public String uploadAvatar(User loginUser, MultipartFile avatar) {
+        String uploadPathPrefix = String.format("avatar/%s", loginUser.getId());
+        UploadPictureResult uploadPictureResult = filePictureUpload.uploadPicture(avatar, uploadPathPrefix);
+        return uploadPictureResult.getUrl();
     }
 
     /**

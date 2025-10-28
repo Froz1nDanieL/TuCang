@@ -26,14 +26,15 @@
     <!-- 查询最活跃用户（基于创建图片数量） -->
     <select id="getActiveUserRanking" resultType="com.mushan.tucangbackend.model.entity.User">
         SELECT u.id, u.userAccount, u.userName, u.userAvatar, u.userProfile,
-               u.userRole
+               u.userRole, COALESCE(p.pictureCount, 0) as pictureCount
         FROM user u
-        INNER JOIN (
+        LEFT JOIN (
             SELECT userId, COUNT(*) as pictureCount
             FROM picture
             WHERE isDelete = 0 AND reviewStatus = 1 AND spaceId IS NULL
             GROUP BY userId
-        ) p ON u.id = p.userId
+        ) p ON u.id = p.uDESCRIBE user;
+serId
         WHERE u.isDelete = 0
         <if test="cursorId != null">
             AND u.id &lt; #{cursorId}
@@ -45,15 +46,14 @@
     <!-- 查询热门用户（基于创建图片的点赞数和收藏数之和） -->
     <select id="getPopularUserRanking" resultType="com.mushan.tucangbackend.model.entity.User">
         SELECT u.id, u.userAccount, u.userName, u.userAvatar, u.userProfile,
-               u.userRole
+               u.userRole, COALESCE(p.heatValue, 0) as heatValue
         FROM user u
-        INNER JOIN (
+        LEFT JOIN (
             SELECT p.userId, 
                    SUM(COALESCE(p.likeCount, 0) + COALESCE(p.favoriteCount, 0)) as heatValue
             FROM picture p
             WHERE p.isDelete = 0 AND p.reviewStatus = 1 AND p.spaceId IS NULL
             GROUP BY p.userId
-            HAVING heatValue > 0
         ) p ON u.id = p.userId
         WHERE u.isDelete = 0
         <if test="cursorId != null">
