@@ -396,4 +396,10 @@ public class PictureAlbumServiceImpl extends ServiceImpl<PictureAlbumMapper, Pic
         interaction.setUpdateTime(new java.util.Date());
         userPictureInteractionMapper.insert(interaction);
     }
+    
+    @Override
+    public boolean deleteAlbumWithPictures(Long albumId) {
+        clearAlbumPictures(albumId);
+        return this.removeById(albumId);
+    }
 }

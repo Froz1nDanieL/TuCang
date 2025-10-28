@@ -115,8 +115,9 @@ public class PictureAlbumController {
         if (!pictureAlbum.getUserId().equals(loginUser.getId())) {
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
         }
-
-        boolean result = pictureAlbumService.removeById(id);
+        
+        // 先清空收藏夹中的所有收藏记录
+        boolean result = pictureAlbumService.deleteAlbumWithPictures(id);
         return ResultUtils.success(result);
     }
 

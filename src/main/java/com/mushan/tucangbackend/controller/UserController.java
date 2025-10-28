@@ -17,6 +17,7 @@ import com.mushan.tucangbackend.model.vo.UserVO;
 import com.mushan.tucangbackend.service.UserService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
@@ -149,6 +150,41 @@ public class UserController {
         boolean result = userService.updateById(user);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(true);
+    }
+
+    /**
+     * 编辑用户 (给当前登录用户使用)
+     */
+    @PostMapping("/edit")
+    public BaseResponse<Boolean> editUser(HttpServletRequest request, @RequestBody UserEditRequest userEditRequest) {
+        if (userEditRequest == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR);
+        boolean result = userService.editUser(loginUser, userEditRequest);
+        return ResultUtils.success(result);
+    }
+
+    /**
+     * 上传用户头像
+     *
+     * @param request
+     * @param avatar
+     * @return
+     */
+    @PostMapping("/avatar")
+    public BaseResponse<String> uploadAvatar(HttpServletRequest request, @RequestParam("avatar") MultipartFile avatar) {
+        // 检查参数
+        if (avatar == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "头像文件不能为空");
+        }
+        
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR);
+        
+        String avatarUrl = userService.uploadAvatar(loginUser, avatar);
+        return ResultUtils.success(avatarUrl);
     }
 
     /**
