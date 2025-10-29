@@ -33,7 +33,8 @@
             FROM picture
             WHERE isDelete = 0 AND reviewStatus = 1 AND spaceId IS NULL
             GROUP BY userId
-        ) p ON u.id = p.userId
+        ) p ON u.id = p.uDESCRIBE user;
+serId
         WHERE u.isDelete = 0
         <if test="cursorId != null">
             AND u.id &lt; #{cursorId}
