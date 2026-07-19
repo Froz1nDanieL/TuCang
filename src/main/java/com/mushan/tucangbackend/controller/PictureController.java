@@ -550,6 +550,32 @@ public class PictureController {
     }
 
     /**
+     * 从 Elasticsearch 查询图片列表
+     */
+    @PostMapping("/search/es")
+    public BaseResponse<PictureCursorQueryVO> searchFromEs(@RequestBody PictureCursorQueryRequest pictureCursorQueryRequest,
+                                                           HttpServletRequest request) {
+        ThrowUtils.throwIf(pictureCursorQueryRequest == null, ErrorCode.PARAMS_ERROR);
+        // 限制爬虫
+        long size = pictureCursorQueryRequest.getPageSize();
+        ThrowUtils.throwIf(size <= 0 || size > 20, ErrorCode.PARAMS_ERROR, "分页大小必须在1到20之间");
+
+        // 访问范围必须由服务端决定，不能信任前端传入的审核状态或空空间标志。
+        pictureCursorQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
+        Long spaceId = pictureCursorQueryRequest.getSpaceId();
+        if (spaceId == null) {
+            pictureCursorQueryRequest.setNullSpaceId(true);
+        } else {
+            pictureCursorQueryRequest.setNullSpaceId(false);
+            boolean hasPermission = StpKit.SPACE.hasPermission(SpaceUserPermissionConstant.PICTURE_VIEW);
+            ThrowUtils.throwIf(!hasPermission, ErrorCode.NO_AUTH_ERROR);
+        }
+
+        PictureCursorQueryVO result = pictureService.searchFromEs(pictureCursorQueryRequest, request);
+        return ResultUtils.success(result);
+    }
+
+    /**
      * 获取用户收藏夹列表（包含图片收藏状态）
      *
      * @param pictureId 图片ID

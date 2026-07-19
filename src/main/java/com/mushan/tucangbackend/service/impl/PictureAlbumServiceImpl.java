@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static com.mushan.tucangbackend.manager.ScheduledTasksManager.SYSTEM_ADMIN_USER_ID;
+import static com.mushan.tucangbackend.manager.Job.PictureTasksManager.SYSTEM_ADMIN_USER_ID;
 
 /**
 * @author Danie

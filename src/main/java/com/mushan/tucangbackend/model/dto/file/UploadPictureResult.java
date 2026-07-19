@@ -43,6 +43,31 @@ public class UploadPictureResult {
     /**  
      * 图片格式
      */  
-    private String picFormat;  
+    private String picFormat;
+
+    /**
+     * 图片主色调
+     */
+    private String picColor;
+
+    /**
+     * Lab 调色板 JSON
+     */
+    private String colorPalette;
+
+    /**
+     * 标准色标签 JSON
+     */
+    private String colorTags;
+
+    /**
+     * 十种标准色分数 JSON
+     */
+    private String colorScores;
+
+    /**
+     * 颜色算法版本
+     */
+    private Integer colorAlgoVersion;
   
 }

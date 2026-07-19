@@ -47,3 +47,8 @@ knife4j:
 # 阿里云 AI 配置
 aliYunAi:
   apiKey: <your apiKey>
+
+# 历史图片颜色回填默认关闭；完成数据库迁移后可通过环境变量临时开启一次。
+picture:
+  color-search:
+    backfill-enabled: false

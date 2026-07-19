@@ -130,6 +130,30 @@ public class Picture {
      */
     private Integer favoriteCount = 0;
 
+    /**
+     * 图片主色调
+     */
+    private String picColor;
+
+    /**
+     * Lab 调色板（JSON 数组）
+     */
+    private String colorPalette;
+
+    /**
+     * 十种标准色标签（JSON 数组）
+     */
+    private String colorTags;
+
+    /**
+     * 十种标准色离线分数（JSON 对象）
+     */
+    private String colorScores;
+
+    /**
+     * 颜色分析算法版本
+     */
+    private Integer colorAlgoVersion;
 
     /**
      * 是否删除

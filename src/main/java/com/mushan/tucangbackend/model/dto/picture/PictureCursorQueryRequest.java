@@ -66,6 +66,11 @@ public class PictureCursorQueryRequest extends PageRequest implements Serializab
     private String picFormat;
 
     /**
+     * 图片主色调，支持 #RRGGBB、0xRRGGBB 或 RRGGBB
+     */
+    private String picColor;
+
+    /**
      * 搜索词
      */
     private String searchText;
@@ -114,6 +119,11 @@ public class PictureCursorQueryRequest extends PageRequest implements Serializab
      * 游标ID，用于分页查询
      */
     private Long cursorId;
+
+    /**
+     * 颜色相关性排序游标，必须与 cursorId 一起传递。
+     */
+    private Double cursorScore;
 
     /**
      * 排序字段

@@ -9,9 +9,11 @@ import com.mushan.tucangbackend.api.aliyunai.model.GetTextToImageTaskResponse;
 import com.mushan.tucangbackend.model.dto.picture.*;
 import com.mushan.tucangbackend.model.entity.Picture;
 import com.mushan.tucangbackend.model.entity.User;
+import com.mushan.tucangbackend.model.es.PictureEsDTO;
 import com.mushan.tucangbackend.model.vo.PictureAlbumVO;
 import com.mushan.tucangbackend.model.vo.PictureCursorQueryVO;
 import com.mushan.tucangbackend.model.vo.PictureVO;
+import org.springframework.data.elasticsearch.core.SearchHits;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.servlet.http.HttpServletRequest;
@@ -204,4 +206,12 @@ public interface PictureService extends IService<Picture> {
      * @return 热门图片列表
      */
     List<Picture> getHotPicturesByPopularity(String category, int limit);
+    
+    /**
+     * 从 Elasticsearch 游标查询图片
+     *
+     * @param pictureCursorQueryRequest 游标查询请求
+     * @return PictureCursorQueryVO对象
+     */
+    PictureCursorQueryVO searchFromEs(PictureCursorQueryRequest pictureCursorQueryRequest, HttpServletRequest request);
 }

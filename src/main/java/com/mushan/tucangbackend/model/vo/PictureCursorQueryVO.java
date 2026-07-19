@@ -22,6 +22,11 @@ public class PictureCursorQueryVO implements Serializable {
     private Long nextCursorId;
 
     /**
+     * 颜色相关性排序的下一页游标。
+     */
+    private Double nextCursorScore;
+
+    /**
      * 是否还有更多数据
      */
     private Boolean hasMore;

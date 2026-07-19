@@ -28,13 +28,24 @@ import com.mushan.tucangbackend.model.dto.file.UploadPictureResult;
 import com.mushan.tucangbackend.model.dto.picture.*;
 import com.mushan.tucangbackend.model.entity.*;
 import com.mushan.tucangbackend.model.enums.PictureReviewStatusEnum;
+import com.mushan.tucangbackend.model.es.PictureEsDTO;
 import com.mushan.tucangbackend.model.vo.PictureAlbumVO;
 import com.mushan.tucangbackend.model.vo.PictureCursorQueryVO;
 import com.mushan.tucangbackend.model.vo.PictureVO;
 import com.mushan.tucangbackend.model.vo.UserVO;
 import com.mushan.tucangbackend.service.*;
 import com.mushan.tucangbackend.mapper.PictureMapper;
+import com.mushan.tucangbackend.utils.ColorPaletteUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.elasticsearch.common.lucene.search.function.CombineFunction;
+import org.elasticsearch.common.lucene.search.function.FunctionScoreQuery;
+import org.elasticsearch.index.query.BoolQueryBuilder;
+import org.elasticsearch.index.query.QueryBuilder;
+import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder;
+import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
+import org.elasticsearch.search.sort.SortBuilders;
+import org.elasticsearch.search.sort.SortOrder;
 import org.jsoup.Jsoup;
 import org.jsoup.internal.StringUtil;
 import org.jsoup.nodes.Document;
@@ -43,6 +54,11 @@ import org.jsoup.select.Elements;
 import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
+import org.springframework.data.elasticsearch.core.SearchHit;
+import org.springframework.data.elasticsearch.core.SearchHits;
+import org.springframework.data.elasticsearch.core.query.NativeSearchQuery;
+import org.springframework.data.elasticsearch.core.query.NativeSearchQueryBuilder;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -113,6 +129,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     @Resource
     private SpaceUserAuthManager spaceUserAuthManager;
+
+    @Resource
+    private ElasticsearchRestTemplate elasticsearchRestTemplate;
 
     @Override
     public PictureVO uploadPicture(Object inputSource, PictureUploadRequest pictureUploadRequest, User loginUser) {
@@ -203,6 +222,11 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         picture.setPicHeight(uploadPictureResult.getPicHeight());
         picture.setPicScale(uploadPictureResult.getPicScale());
         picture.setPicFormat(uploadPictureResult.getPicFormat());
+        picture.setPicColor(uploadPictureResult.getPicColor());
+        picture.setColorPalette(uploadPictureResult.getColorPalette());
+        picture.setColorTags(uploadPictureResult.getColorTags());
+        picture.setColorScores(uploadPictureResult.getColorScores());
+        picture.setColorAlgoVersion(uploadPictureResult.getColorAlgoVersion());
         picture.setUserId(loginUser.getId());
         picture.setSpaceId(spaceId);
         //补充审核信息
@@ -957,6 +981,11 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     @Override
     public Boolean likePicture(Long pictureId, User loginUser) {
+        // 限流校验：每分钟最多10次点赞
+        if (isRateLimited(loginUser.getId(), "like", 10, 60)) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作过于频繁，请稍后再试");
+        }
+
         // 检查图片是否存在
         Picture picture = this.getById(pictureId);
         if (picture == null) {
@@ -998,6 +1027,11 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     @Override
     public Boolean favoritePicture(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
+        // 限流校验：每分钟最多10次收藏
+        if (isRateLimited(loginUser.getId(), "favor", 10, 60)) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作过于频繁，请稍后再试");
+        }
+
         Long pictureId = pictureFavoriteRequest.getPictureId();
         Long albumId = pictureFavoriteRequest.getAlbumId();
 
@@ -1171,6 +1205,11 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     @Override
     public Boolean addPictureToAlbum(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
+        // 限流校验：每分钟最多10次收藏
+        if (isRateLimited(loginUser.getId(), "favor", 10, 60)) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作过于频繁，请稍后再试");
+        }
+
         Long pictureId = pictureFavoriteRequest.getPictureId();
         Long albumId = pictureFavoriteRequest.getAlbumId();
 
@@ -1238,6 +1277,11 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     @Override
     public Boolean removePictureFromAlbum(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
+        // 限流校验：每分钟最多10次收藏
+        if (isRateLimited(loginUser.getId(), "favor", 10, 60)) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作过于频繁，请稍后再试");
+        }
+
         Long pictureId = pictureFavoriteRequest.getPictureId();
         Long albumId = pictureFavoriteRequest.getAlbumId();
 
@@ -1356,4 +1400,228 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         return this.list(queryWrapper);
     }
 
+    @Override
+    public PictureCursorQueryVO searchFromEs(PictureCursorQueryRequest pictureCursorQueryRequest, HttpServletRequest request) {
+        // 限制每次查询的数据量
+        long size = pictureCursorQueryRequest.getPageSize();
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR, "分页大小不能超过20");
+
+        // 构造查询条件
+        NativeSearchQuery searchQuery = this.buildEsQuery(pictureCursorQueryRequest);
+
+        // 执行查询
+        SearchHits<PictureEsDTO> searchHits = elasticsearchRestTemplate.search(searchQuery, PictureEsDTO.class);
+
+        List<SearchHit<PictureEsDTO>> allHits = searchHits.getSearchHits();
+        boolean hasMore = allHits.size() > size;
+        List<SearchHit<PictureEsDTO>> pageHits = hasMore
+                ? allHits.subList(0, (int) size)
+                : allHits;
+
+        // 转换结果
+        List<Picture> pictureList = pageHits.stream()
+                .map(SearchHit::getContent)
+                .map(PictureEsDTO::dtoToObj)
+                .collect(Collectors.toList());
+
+        PictureCursorQueryVO result = buildPictureCursorQueryVO(pictureList, size, request);
+        result.setHasMore(hasMore);
+        if (!hasMore || CollUtil.isEmpty(pageHits)) {
+            result.setNextCursorId(null);
+            result.setNextCursorScore(null);
+            return result;
+        }
+
+        SearchHit<PictureEsDTO> lastHit = pageHits.get(pageHits.size() - 1);
+        result.setNextCursorId(lastHit.getContent().getId());
+        if (StrUtil.isNotBlank(pictureCursorQueryRequest.getPicColor())) {
+            result.setNextCursorScore((double) lastHit.getScore());
+        }
+        return result;
+    }
+
+    /**
+     * 构造 Elasticsearch 查询条件
+     *
+     * @param pictureCursorQueryRequest 游标查询请求
+     * @return NativeSearchQuery 查询对象
+     */
+    private NativeSearchQuery buildEsQuery(PictureCursorQueryRequest pictureCursorQueryRequest) {
+        BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();
+
+        if (pictureCursorQueryRequest == null) {
+            return new NativeSearchQueryBuilder()
+                    .withQuery(boolQueryBuilder)
+                    .build();
+        }
+
+        // 从对象中取值
+        Long id = pictureCursorQueryRequest.getId();
+        String name = pictureCursorQueryRequest.getName();
+        String introduction = pictureCursorQueryRequest.getIntroduction();
+        String category = pictureCursorQueryRequest.getCategory();
+        List<String> tags = pictureCursorQueryRequest.getTags();
+        Long picSize = pictureCursorQueryRequest.getPicSize();
+        Integer picWidth = pictureCursorQueryRequest.getPicWidth();
+        Integer picHeight = pictureCursorQueryRequest.getPicHeight();
+        Double picScale = pictureCursorQueryRequest.getPicScale();
+        String picFormat = pictureCursorQueryRequest.getPicFormat();
+        String picColor = pictureCursorQueryRequest.getPicColor();
+        String searchText = pictureCursorQueryRequest.getSearchText();
+        Long userId = pictureCursorQueryRequest.getUserId();
+        Integer reviewStatus = pictureCursorQueryRequest.getReviewStatus();
+        String reviewMessage = pictureCursorQueryRequest.getReviewMessage();
+        Long reviewerId = pictureCursorQueryRequest.getReviewerId();
+        Long spaceId = pictureCursorQueryRequest.getSpaceId();
+        Date startEditTime = pictureCursorQueryRequest.getStartEditTime();
+        Date endEditTime = pictureCursorQueryRequest.getEndEditTime();
+        boolean nullSpaceId = pictureCursorQueryRequest.isNullSpaceId();
+        String sortField = pictureCursorQueryRequest.getSortField();
+        String sortOrder = pictureCursorQueryRequest.getSortOrder();
+
+
+
+        boolQueryBuilder.filter(QueryBuilders.termQuery("isDelete", 0));
+        // 从多字段中搜索
+        if (StrUtil.isNotBlank(searchText)) {
+            boolQueryBuilder.should(QueryBuilders.matchQuery("name", searchText));
+            boolQueryBuilder.should(QueryBuilders.matchQuery("introduction", searchText));
+            // 至少需要匹配一个 should 条件
+            boolQueryBuilder.minimumShouldMatch(1);
+        }
+
+
+
+        // 精确匹配条件
+        if (id != null) {
+            boolQueryBuilder.filter(QueryBuilders.termQuery("id", id));
+        }
+        if (userId != null) {
+            boolQueryBuilder.filter(QueryBuilders.termQuery("userId", userId));
+        }
+        if (StrUtil.isNotBlank(picFormat)) {
+            boolQueryBuilder.filter(QueryBuilders.termQuery("picFormat", picFormat));
+        }
+        String colorKey = null;
+        if (StrUtil.isNotBlank(picColor)) {
+            try {
+                colorKey = ColorPaletteUtils.resolveCanonicalKey(picColor);
+            } catch (IllegalArgumentException e) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, e.getMessage());
+            }
+            boolQueryBuilder.filter(QueryBuilders.termQuery("colorTags", colorKey));
+        }
+        if (StrUtil.isNotBlank(category)) {
+            boolQueryBuilder.filter(QueryBuilders.termQuery("category", category));
+        }
+        if (picWidth != null) {
+            boolQueryBuilder.filter(QueryBuilders.termQuery("picWidth", picWidth));
+        }
+        if (picHeight != null) {
+            boolQueryBuilder.filter(QueryBuilders.termQuery("picHeight", picHeight));
+        }
+        if (picSize != null) {
+            boolQueryBuilder.filter(QueryBuilders.termQuery("picSize", picSize));
+        }
+        if (picScale != null) {
+            boolQueryBuilder.filter(QueryBuilders.termQuery("picScale", picScale));
+        }
+        if (reviewStatus != null) {
+            boolQueryBuilder.filter(QueryBuilders.termQuery("reviewStatus", reviewStatus));
+        }
+        if (StrUtil.isNotBlank(reviewMessage)) {
+            boolQueryBuilder.filter(QueryBuilders.matchQuery("reviewMessage", reviewMessage));
+        }
+        if (reviewerId != null) {
+            boolQueryBuilder.filter(QueryBuilders.termQuery("reviewerId", reviewerId));
+        }
+        if (spaceId != null) {
+            boolQueryBuilder.filter(QueryBuilders.termQuery("spaceId", spaceId));
+        }
+        if (startEditTime != null) {
+            boolQueryBuilder.filter(QueryBuilders.rangeQuery("editTime").gte(startEditTime));
+        }
+        if (endEditTime != null) {
+            boolQueryBuilder.filter(QueryBuilders.rangeQuery("editTime").lt(endEditTime));
+        }
+        if (nullSpaceId) {
+            boolQueryBuilder.filter(QueryBuilders.boolQuery().mustNot(QueryBuilders.existsQuery("spaceId")));
+        }
+
+        // 标签查询（JSON 数组查询）
+        if (CollUtil.isNotEmpty(tags)) {
+            for (String tag : tags) {
+                boolQueryBuilder.filter(QueryBuilders.matchQuery("tags", tag));
+            }
+        }
+
+        // 添加游标条件
+        Long cursorId = pictureCursorQueryRequest.getCursorId();
+        if (cursorId != null && colorKey == null) {
+            // 如果是降序排序，查找比游标ID小的数据
+            if (StrUtil.isBlank(sortField) || "id".equals(sortField)) {
+                if (StrUtil.isBlank(sortOrder) || "descend".equals(sortOrder)) {
+                    boolQueryBuilder.filter(QueryBuilders.rangeQuery("id").lt(cursorId));
+                } else {
+                    boolQueryBuilder.filter(QueryBuilders.rangeQuery("id").gt(cursorId));
+                }
+            } else {
+                // 其他字段排序仍使用原来的方式
+                boolQueryBuilder.filter(QueryBuilders.rangeQuery("id").gt(cursorId));
+            }
+        }
+
+        // 构建查询对象
+        QueryBuilder finalQuery = boolQueryBuilder;
+        if (colorKey != null) {
+            FunctionScoreQueryBuilder colorRankQuery = QueryBuilders.functionScoreQuery(
+                            boolQueryBuilder,
+                            ScoreFunctionBuilders.fieldValueFactorFunction("colorScores." + colorKey)
+                                    .missing(0D)
+                    )
+                    .scoreMode(FunctionScoreQuery.ScoreMode.SUM)
+                    .boostMode(CombineFunction.SUM);
+            finalQuery = colorRankQuery;
+        }
+
+        NativeSearchQueryBuilder searchQueryBuilder = new NativeSearchQueryBuilder()
+                .withQuery(finalQuery);
+
+        // 设置排序
+        if (colorKey != null) {
+            searchQueryBuilder
+                    .withSort(SortBuilders.scoreSort().order(SortOrder.DESC))
+                    .withSort(SortBuilders.fieldSort("id").order(SortOrder.DESC));
+            if (pictureCursorQueryRequest.getCursorScore() != null && cursorId != null) {
+                searchQueryBuilder.withSearchAfter(Arrays.asList(
+                        pictureCursorQueryRequest.getCursorScore(),
+                        cursorId
+                ));
+            }
+        } else {
+            if (StrUtil.isBlank(sortField)) {
+                sortField = "id";
+            }
+            SortOrder esSortOrder = "descend".equals(sortOrder) ? SortOrder.DESC : SortOrder.ASC;
+            searchQueryBuilder.withSort(SortBuilders.fieldSort(sortField).order(esSortOrder));
+        }
+
+        // 多取一条，用于准确判断是否还有下一页。
+        searchQueryBuilder.withPageable(org.springframework.data.domain.PageRequest.of(
+                0,
+                (int) pictureCursorQueryRequest.getPageSize() + 1
+        ));
+
+        return searchQueryBuilder.build();
+    }
+
+    // 限流工具方法
+    private boolean isRateLimited(Long userId, String action, int maxCount, int seconds) {
+        String key = "rate_limit:" + userId + ":" + action; // 如 "rate_limit:123:like"
+        Long count = redisTemplate.opsForValue().increment(key, 1);
+        if (count != null && count == 1) {
+            redisTemplate.expire(key, seconds, TimeUnit.SECONDS); // 首次设置过期时间
+        }
+        return count != null && count > maxCount; // 超过限制返回true
+    }
 }

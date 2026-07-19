@@ -109,6 +109,11 @@ public class PictureVO implements Serializable {
     private Integer favoriteCount;
 
     /**
+     * 图片主色调
+     */
+    private String picColor;
+
+    /**
      * 当前用户是否已点赞
      */
     private Boolean isLiked = false;
@@ -122,6 +127,8 @@ public class PictureVO implements Serializable {
      * 创建用户信息  
      */  
     private UserVO user;
+
+
 
     /**
      * 权限列表

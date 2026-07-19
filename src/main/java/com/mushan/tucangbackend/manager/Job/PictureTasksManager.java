@@ -1,4 +1,4 @@
-package com.mushan.tucangbackend.manager;
+package com.mushan.tucangbackend.manager.Job;
 
 import cn.hutool.json.JSONUtil;
 import com.mushan.tucangbackend.model.entity.Picture;
@@ -21,15 +21,13 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-import static com.mushan.tucangbackend.manager.ScheduledTasksManager.SYSTEM_ADMIN_USER_ID;
-
 /**
  * 定时任务管理器
  * 负责执行各种定时任务
  */
 @Component
 @Slf4j
-public class ScheduledTasksManager {
+public class PictureTasksManager {
 
     @Resource
     private PictureAlbumService pictureAlbumService;

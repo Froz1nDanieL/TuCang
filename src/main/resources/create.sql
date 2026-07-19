@@ -25,7 +25,12 @@ create table picture
     thumbnailUrl  varchar(512)                       null comment '缩略图 url',
     spaceId       bigint                             null comment '空间 id（为空表示公共空间）',
     likeCount     int      default 0                 null comment '点赞数',
-    favoriteCount int      default 0                 null comment '收藏数'
+    favoriteCount int      default 0                 null comment '收藏数',
+    picColor      varchar(16)                        null comment '图片主色调',
+    colorPalette  json                               null comment 'Lab 调色板 JSON',
+    colorTags     json                               null comment '十种标准色标签 JSON',
+    colorScores   json                               null comment '十种标准色离线分数 JSON',
+    colorAlgoVersion int   default 1                 null comment '颜色算法版本'
 )
     comment '图片' collate = utf8mb4_unicode_ci;
 

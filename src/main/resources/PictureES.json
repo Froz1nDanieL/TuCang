@@ -1,0 +1,128 @@
+{
+  "mappings": {
+    "properties": {
+      "id": {
+        "type": "long"
+      },
+      "url": {
+        "type": "text",
+        "analyzer": "ik_max_word",
+        "search_analyzer": "ik_smart"
+      },
+      "thumbnailUrl": {
+        "type": "text",
+        "analyzer": "ik_max_word",
+        "search_analyzer": "ik_smart"
+      },
+      "name": {
+        "type": "text",
+        "analyzer": "ik_max_word",
+        "search_analyzer": "ik_smart"
+      },
+      "introduction": {
+        "type": "text",
+        "analyzer": "ik_max_word",
+        "search_analyzer": "ik_smart"
+      },
+      "category": {
+        "type": "keyword"
+      },
+      "tags": {
+        "type": "text",
+        "analyzer": "ik_max_word",
+        "search_analyzer": "ik_smart"
+      },
+      "picSize": {
+        "type": "long"
+      },
+      "picWidth": {
+        "type": "integer"
+      },
+      "picHeight": {
+        "type": "integer"
+      },
+      "picScale": {
+        "type": "double"
+      },
+      "picFormat": {
+        "type": "keyword"
+      },
+      "userId": {
+        "type": "long"
+      },
+      "spaceId": {
+        "type": "long"
+      },
+      "createTime": {
+        "type": "date",
+        "format": "yyyy-MM-dd HH:mm:ss"
+      },
+      "editTime": {
+        "type": "date",
+        "format": "yyyy-MM-dd HH:mm:ss"
+      },
+      "updateTime": {
+        "type": "date",
+        "format": "yyyy-MM-dd HH:mm:ss"
+      },
+      "reviewStatus": {
+        "type": "integer"
+      },
+      "reviewMessage": {
+        "type": "text",
+        "analyzer": "ik_max_word",
+        "search_analyzer": "ik_smart"
+      },
+      "reviewerId": {
+        "type": "long"
+      },
+      "reviewTime": {
+        "type": "date",
+        "format": "yyyy-MM-dd HH:mm:ss"
+      },
+      "likeCount": {
+        "type": "integer"
+      },
+      "favoriteCount": {
+        "type": "integer"
+      },
+      "picColor": {
+        "type": "keyword"
+      },
+      "colorPalette": {
+        "type": "nested",
+        "properties": {
+          "hex": { "type": "keyword" },
+          "l": { "type": "float" },
+          "a": { "type": "float" },
+          "b": { "type": "float" },
+          "weight": { "type": "float" }
+        }
+      },
+      "colorTags": {
+        "type": "keyword"
+      },
+      "colorScores": {
+        "properties": {
+          "red": { "type": "float" },
+          "orange": { "type": "float" },
+          "yellow": { "type": "float" },
+          "green": { "type": "float" },
+          "cyan": { "type": "float" },
+          "blue": { "type": "float" },
+          "purple": { "type": "float" },
+          "pink": { "type": "float" },
+          "black": { "type": "float" },
+          "white": { "type": "float" }
+        }
+      },
+      "colorAlgoVersion": {
+        "type": "integer"
+      }
+    }
+  },
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 1
+  }
+}

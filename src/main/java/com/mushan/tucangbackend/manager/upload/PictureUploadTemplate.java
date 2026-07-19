@@ -6,11 +6,14 @@ import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.NumberUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import com.mushan.tucangbackend.config.CosClientConfig;
 import com.mushan.tucangbackend.exception.BusinessException;
 import com.mushan.tucangbackend.exception.ErrorCode;
 import com.mushan.tucangbackend.manager.CosManager;
+import com.mushan.tucangbackend.model.color.ColorAnalysisResult;
 import com.mushan.tucangbackend.model.dto.file.UploadPictureResult;
+import com.mushan.tucangbackend.utils.ColorPaletteUtils;
 import com.qcloud.cos.model.PutObjectResult;
 import com.qcloud.cos.model.ciModel.persistence.CIObject;
 import com.qcloud.cos.model.ciModel.persistence.ImageInfo;
@@ -62,6 +65,7 @@ public abstract class PictureUploadTemplate {
             // 上传图片到对象存储
             PutObjectResult putObjectResult = cosManager.putPictureObject(uploadPath, file);
             ImageInfo imageInfo = putObjectResult.getCiUploadResult().getOriginalInfo().getImageInfo();
+            ColorAnalysisResult colorAnalysisResult = analyzeColor(file, imageInfo);
             ProcessResults processResults = putObjectResult.getCiUploadResult().getProcessResults();
             List<CIObject> objectList = processResults.getObjectList();
             if (CollUtil.isNotEmpty(objectList)) {
@@ -73,10 +77,10 @@ public abstract class PictureUploadTemplate {
                     thumbnailCiObject = objectList.get(1);
                 }
                 // 封装压缩图返回结果
-                return buildResult(originFilename, compressedCiObject, thumbnailCiObject);
+                return buildResult(originFilename, compressedCiObject, thumbnailCiObject, imageInfo, colorAnalysisResult);
             }
             // 封装原图返回结果
-            return buildResult(originFilename, file, uploadPath, imageInfo);
+            return buildResult(originFilename, file, uploadPath, imageInfo, colorAnalysisResult);
         } catch (Exception e) {
             log.error("图片上传到对象存储失败", e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "上传失败");
@@ -111,7 +115,9 @@ public abstract class PictureUploadTemplate {
      * @return
      */
 
-    private UploadPictureResult buildResult(String originFilename, CIObject compressedCiObject, CIObject thumbnailCiObject) {
+    private UploadPictureResult buildResult(String originFilename, CIObject compressedCiObject,
+                                            CIObject thumbnailCiObject, ImageInfo imageInfo,
+                                            ColorAnalysisResult colorAnalysisResult) {
         UploadPictureResult uploadPictureResult = new UploadPictureResult();
         int picWidth = compressedCiObject.getWidth();
         int picHeight = compressedCiObject.getHeight();
@@ -122,6 +128,7 @@ public abstract class PictureUploadTemplate {
         uploadPictureResult.setPicScale(picScale);
         uploadPictureResult.setPicFormat(compressedCiObject.getFormat());
         uploadPictureResult.setPicSize(compressedCiObject.getSize().longValue());
+        fillColorResult(uploadPictureResult, imageInfo, colorAnalysisResult);
         // 设置图片为缩略图的地址，去除可能包含的敏感参数
         String thumbnailUrl = cosClientConfig.getHost() + "/" + thumbnailCiObject.getKey();
         uploadPictureResult.setThumbnailUrl(removeSensitiveParams(thumbnailUrl));
@@ -134,7 +141,8 @@ public abstract class PictureUploadTemplate {
     /**  
      * 封装返回结果  
      */  
-    private UploadPictureResult buildResult(String originFilename, File file, String uploadPath, ImageInfo imageInfo) {
+    private UploadPictureResult buildResult(String originFilename, File file, String uploadPath,
+                                            ImageInfo imageInfo, ColorAnalysisResult colorAnalysisResult) {
         UploadPictureResult uploadPictureResult = new UploadPictureResult();
         int picWidth = imageInfo.getWidth();  
         int picHeight = imageInfo.getHeight();  
@@ -145,10 +153,38 @@ public abstract class PictureUploadTemplate {
         uploadPictureResult.setPicScale(picScale);
         uploadPictureResult.setPicFormat(imageInfo.getFormat());
         uploadPictureResult.setPicSize(FileUtil.size(file));
+        fillColorResult(uploadPictureResult, imageInfo, colorAnalysisResult);
         String imageUrl = cosClientConfig.getHost() + "/" + uploadPath;
         uploadPictureResult.setUrl(removeSensitiveParams(imageUrl));
         return uploadPictureResult;
     }  
+
+    private ColorAnalysisResult analyzeColor(File file, ImageInfo imageInfo) {
+        try {
+            return ColorPaletteUtils.analyze(file);
+        } catch (Exception analysisException) {
+            log.warn("本地 Lab 调色板提取失败，降级使用对象存储平均色: {}", analysisException.getMessage());
+            try {
+                return ColorPaletteUtils.fromAverageColor(imageInfo.getAve());
+            } catch (Exception fallbackException) {
+                log.warn("平均色降级分析失败，本次上传不写入颜色索引: {}", fallbackException.getMessage());
+                return null;
+            }
+        }
+    }
+
+    private void fillColorResult(UploadPictureResult result, ImageInfo imageInfo,
+                                 ColorAnalysisResult colorAnalysisResult) {
+        if (colorAnalysisResult == null) {
+            result.setPicColor(imageInfo.getAve());
+            return;
+        }
+        result.setPicColor(colorAnalysisResult.getDominantColor());
+        result.setColorPalette(JSONUtil.toJsonStr(colorAnalysisResult.getPalette()));
+        result.setColorTags(JSONUtil.toJsonStr(colorAnalysisResult.getColorTags()));
+        result.setColorScores(JSONUtil.toJsonStr(colorAnalysisResult.getColorScores()));
+        result.setColorAlgoVersion(colorAnalysisResult.getAlgorithmVersion());
+    }
   
     /**
      * 移除URL中的敏感参数

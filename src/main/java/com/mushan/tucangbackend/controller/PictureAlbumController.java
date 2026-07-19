@@ -1,7 +1,6 @@
 package com.mushan.tucangbackend.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mushan.tucangbackend.annotation.AuthCheck;
 import com.mushan.tucangbackend.common.BaseResponse;
@@ -31,8 +30,6 @@ import javax.servlet.http.HttpServletRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
-
-import static com.mushan.tucangbackend.manager.ScheduledTasksManager.SYSTEM_ADMIN_USER_ID;
 
 /**
  * 收藏夹接口
