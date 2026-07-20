@@ -4,6 +4,7 @@ import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.dev33.satoken.secure.BCrypt;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.CollectionUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
@@ -29,7 +30,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
-import org.springframework.util.DigestUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
@@ -106,9 +106,20 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      */
     @Override
     public String getEncryptPassword(String userPassword) {
-        // 盐值，混淆密码
-        final String SALT = "mushan";
-        return DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
+        return BCrypt.hashpw(userPassword);
+    }
+
+    @Override
+    public boolean matchesPassword(String userPassword, String encryptedPassword) {
+        if (StrUtil.hasBlank(userPassword, encryptedPassword)) {
+            return false;
+        }
+        try {
+            return BCrypt.checkpw(userPassword, encryptedPassword);
+        } catch (IllegalArgumentException e) {
+            // 数据库中的密码不是合法 BCrypt 哈希时，统一按密码不匹配处理
+            return false;
+        }
     }
 
     @Override
@@ -123,15 +134,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (userPassword.length() < 8) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "密码错误");
         }
-        // 2. 加密
-        String encryptPassword = getEncryptPassword(userPassword);
-        // 查询用户是否存在
+        // 2. 先按账号查询用户，再使用 BCrypt 校验密码
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("userAccount", userAccount);
-        queryWrapper.eq("userPassword", encryptPassword);
         User user = this.baseMapper.selectOne(queryWrapper);
-        // 用户不存在
-        if (user == null) {
+        // 用户不存在或密码错误
+        if (user == null || !matchesPassword(userPassword, user.getUserPassword())) {
             log.info("user login failed, userAccount cannot match userPassword");
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户不存在或密码错误");
         }

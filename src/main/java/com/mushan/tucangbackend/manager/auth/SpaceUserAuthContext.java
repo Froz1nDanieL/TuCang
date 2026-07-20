@@ -1,8 +1,5 @@
 package com.mushan.tucangbackend.manager.auth;
 
-import com.mushan.tucangbackend.model.entity.Picture;
-import com.mushan.tucangbackend.model.entity.Space;
-import com.mushan.tucangbackend.model.entity.SpaceUser;
 import lombok.Data;
 
 /**
@@ -32,18 +29,4 @@ public class SpaceUserAuthContext {
      */
     private Long spaceUserId;
 
-    /**
-     * 图片信息
-     */
-    private Picture picture;
-
-    /**
-     * 空间信息
-     */
-    private Space space;
-
-    /**
-     * 空间用户信息
-     */
-    private SpaceUser spaceUser;
 }

@@ -39,6 +39,15 @@ public interface UserService extends IService<User> {
     String getEncryptPassword(String userPassword);
 
     /**
+     * 校验明文密码是否与已加密密码匹配
+     *
+     * @param userPassword 明文密码
+     * @param encryptedPassword 已加密密码
+     * @return 是否匹配
+     */
+    boolean matchesPassword(String userPassword, String encryptedPassword);
+
+    /**
      * 用户登录
      *
      * @param userAccount  用户账户

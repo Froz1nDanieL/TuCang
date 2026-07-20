@@ -341,8 +341,8 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         long id = pictureEditRequest.getId();
         Picture oldPicture = this.getById(id);
         ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
-        // 校验权限，已改为注解鉴权
-//        checkPictureAuth(loginUser, oldPicture);
+        // Service 层再次校验实际图片，避免权限上下文解析异常导致越权
+        checkPicturePermission(loginUser, oldPicture, SpaceUserPermissionConstant.PICTURE_EDIT);
         // 补充审核参数
         this.fillReviewParams(picture, loginUser);
         // 操作数据库
@@ -358,8 +358,8 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         // 判断是否存在
         Picture oldPicture = this.getById(pictureId);
         ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
-        // 校验权限，已改为注解鉴权
-//        checkPictureAuth(loginUser, oldPicture);
+        // Service 层再次校验实际图片，避免权限上下文解析异常导致越权
+        checkPicturePermission(loginUser, oldPicture, SpaceUserPermissionConstant.PICTURE_DELETE);
         // 开启事务
         transactionTemplate.execute(status -> {
             // 操作数据库
@@ -524,8 +524,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         Long pictureId = createPictureOutPaintingRequest.getPictureId();
         Picture picture = Optional.ofNullable(this.getById(pictureId))
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND_ERROR));
-        // 权限校验，已改为注解鉴权
-        // checkPictureAuth(loginUser, picture);
+        checkPicturePermission(loginUser, picture, SpaceUserPermissionConstant.PICTURE_EDIT);
         // 构造请求参数
         CreateOutPaintingTaskRequest taskRequest = new CreateOutPaintingTaskRequest();
         CreateOutPaintingTaskRequest.Input input = new CreateOutPaintingTaskRequest.Input();
@@ -786,18 +785,30 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     @Override
     public void checkPictureAuth(User loginUser, Picture picture) {
+        checkPicturePermission(loginUser, picture, SpaceUserPermissionConstant.PICTURE_EDIT);
+    }
+
+    /**
+     * 按实际图片及所需权限进行对象级鉴权，作为 Controller 注解鉴权的 Service 层兜底。
+     */
+    private void checkPicturePermission(User loginUser, Picture picture, String requiredPermission) {
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
+        ThrowUtils.throwIf(picture == null, ErrorCode.NOT_FOUND_ERROR);
         Long spaceId = picture.getSpaceId();
         if (spaceId == null) {
-            // 公共图库，仅本人或管理员可操作
-            if (!picture.getUserId().equals(loginUser.getId()) && !userService.isAdmin(loginUser)) {
-                throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
+            // 公共图片允许查看；修改和删除仅限图片本人或系统管理员
+            if (SpaceUserPermissionConstant.PICTURE_VIEW.equals(requiredPermission)
+                    || Objects.equals(picture.getUserId(), loginUser.getId())
+                    || userService.isAdmin(loginUser)) {
+                return;
             }
-        } else {
-            // 私有空间，仅空间管理员可操作
-            if (!picture.getUserId().equals(loginUser.getId())) {
-                throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
-            }
+            throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
         }
+
+        Space space = spaceService.getById(spaceId);
+        ThrowUtils.throwIf(space == null, ErrorCode.NOT_FOUND_ERROR, "空间不存在");
+        List<String> permissionList = spaceUserAuthManager.getPermissionList(space, loginUser);
+        ThrowUtils.throwIf(!permissionList.contains(requiredPermission), ErrorCode.NO_AUTH_ERROR);
     }
 
     @Override
@@ -991,6 +1002,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         if (picture == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
         }
+        checkPicturePermission(loginUser, picture, SpaceUserPermissionConstant.PICTURE_VIEW);
 
         // 查询用户是否已经点赞过该图片
         QueryWrapper<UserPictureInteraction> queryWrapper = new QueryWrapper<>();
@@ -1040,6 +1052,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         if (picture == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
         }
+        checkPicturePermission(loginUser, picture, SpaceUserPermissionConstant.PICTURE_VIEW);
 
         // 必须指定收藏夹
         if (albumId == null || albumId <= 0) {
