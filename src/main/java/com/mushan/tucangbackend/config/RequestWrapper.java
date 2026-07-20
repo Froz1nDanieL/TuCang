@@ -1,49 +1,48 @@
 package com.mushan.tucangbackend.config;
 
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.StreamUtils;
 
 import javax.servlet.ReadListener;
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletRequestWrapper;
 import java.io.*;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
+import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
 
 /**
  * 包装请求，使 InputStream 可以重复读取
  *
  * @author pine
  */
-@Slf4j
 public class RequestWrapper extends HttpServletRequestWrapper {
 
-    private final String body;
+    private final byte[] body;
 
     public RequestWrapper(HttpServletRequest request) {
         super(request);
-        StringBuilder stringBuilder = new StringBuilder();
-        try (InputStream inputStream = request.getInputStream(); BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream))) {
-            char[] charBuffer = new char[128];
-            int bytesRead = -1;
-            while ((bytesRead = bufferedReader.read(charBuffer)) > 0) {
-                stringBuilder.append(charBuffer, 0, bytesRead);
-            }
-        } catch (IOException ignored) {
+        try {
+            // 原样缓存请求字节，避免使用系统默认字符集进行 String/byte[] 往返转换
+            this.body = StreamUtils.copyToByteArray(request.getInputStream());
+        } catch (IOException e) {
+            throw new UncheckedIOException("读取请求体失败", e);
         }
-        body = stringBuilder.toString();
     }
 
     @Override
     public ServletInputStream getInputStream() throws IOException {
-        final ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(body.getBytes());
+        final ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(body);
         return new ServletInputStream() {
             @Override
             public boolean isFinished() {
-                return false;
+                return byteArrayInputStream.available() == 0;
             }
 
             @Override
             public boolean isReady() {
-                return false;
+                return true;
             }
 
             @Override
@@ -54,17 +53,34 @@ public class RequestWrapper extends HttpServletRequestWrapper {
             public int read() throws IOException {
                 return byteArrayInputStream.read();
             }
+
+            @Override
+            public int read(byte[] bytes, int offset, int length) {
+                return byteArrayInputStream.read(bytes, offset, length);
+            }
         };
 
     }
 
     @Override
     public BufferedReader getReader() throws IOException {
-        return new BufferedReader(new InputStreamReader(this.getInputStream()));
+        return new BufferedReader(new InputStreamReader(this.getInputStream(), getRequestCharset()));
     }
 
     public String getBody() {
-        return this.body;
+        return new String(this.body, getRequestCharset());
+    }
+
+    private Charset getRequestCharset() {
+        String characterEncoding = getCharacterEncoding();
+        if (characterEncoding == null) {
+            return StandardCharsets.UTF_8;
+        }
+        try {
+            return Charset.forName(characterEncoding);
+        } catch (IllegalCharsetNameException | UnsupportedCharsetException e) {
+            return StandardCharsets.UTF_8;
+        }
     }
 
 }

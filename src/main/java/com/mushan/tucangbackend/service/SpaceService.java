@@ -65,4 +65,14 @@ public interface SpaceService extends IService<Space> {
     void fillSpaceBySpaceLevel(Space space);
 
     void checkSpaceAuth(User loginUser, Space space);
+
+    /**
+     * 原子更新空间用量。更新后的容量和数量必须处于 0 到上限之间。
+     *
+     * @param spaceId 空间 id
+     * @param sizeDelta 容量变化量，可为负数
+     * @param countDelta 图片数量变化量，可为负数
+     * @return 是否更新成功
+     */
+    boolean updateSpaceUsage(Long spaceId, long sizeDelta, long countDelta);
 }

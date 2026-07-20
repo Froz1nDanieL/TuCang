@@ -149,13 +149,6 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
                 !permissionList.contains("picture:upload")) {
                 throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有空间访问权限");
             }
-            // 校验额度
-            if (space.getTotalCount() >= space.getMaxCount()) {
-                throw new BusinessException(ErrorCode.OPERATION_ERROR, "空间条数不足");
-            }
-            if (space.getTotalSize() >= space.getMaxSize()) {
-                throw new BusinessException(ErrorCode.OPERATION_ERROR, "空间大小不足");
-            }
         }
 
         // 用于判断是新增还是更新图片
@@ -163,9 +156,10 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         if (pictureUploadRequest != null) {
             pictureId = pictureUploadRequest.getId();
         }
+        Picture oldPicture = null;
         // 如果是更新图片，需要校验图片是否存在
         if (pictureId != null) {
-            Picture oldPicture = this.getById(pictureId);
+            oldPicture = this.getById(pictureId);
             ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR, "图片不存在");
             // 仅本人或管理员可编辑
             // 获取空间信息以检查权限
@@ -227,7 +221,8 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         picture.setColorTags(uploadPictureResult.getColorTags());
         picture.setColorScores(uploadPictureResult.getColorScores());
         picture.setColorAlgoVersion(uploadPictureResult.getColorAlgoVersion());
-        picture.setUserId(loginUser.getId());
+        // 重新上传不能改变原图片所有者
+        picture.setUserId(oldPicture == null ? loginUser.getId() : oldPicture.getUserId());
         picture.setSpaceId(spaceId);
         //补充审核信息
         this.fillReviewParams(picture, loginUser);
@@ -239,20 +234,30 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         }
         // 开启事务
         Long finalSpaceId = spaceId;
+        long sizeDelta = calculateSpaceSizeDelta(oldPicture, picture);
+        long countDelta = calculateSpaceCountDelta(oldPicture);
         transactionTemplate.execute(status -> {
             boolean result = this.saveOrUpdate(picture);
             ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "图片上传失败");
             if (finalSpaceId != null) {
-                boolean update = spaceService.lambdaUpdate()
-                        .eq(Space::getId, finalSpaceId)
-                        .setSql("totalSize = totalSize + " + picture.getPicSize())
-                        .setSql("totalCount = totalCount + 1")
-                        .update();
-                ThrowUtils.throwIf(!update, ErrorCode.OPERATION_ERROR, "额度更新失败");
+                boolean update = spaceService.updateSpaceUsage(finalSpaceId, sizeDelta, countDelta);
+                ThrowUtils.throwIf(!update, ErrorCode.OPERATION_ERROR, "空间额度不足或用量更新失败");
             }
             return picture;
         });
         return PictureVO.objToVo(picture);
+    }
+
+    long calculateSpaceSizeDelta(Picture oldPicture, Picture newPicture) {
+        long oldPicSize = oldPicture == null || oldPicture.getPicSize() == null
+                ? 0L : oldPicture.getPicSize();
+        long newPicSize = newPicture == null || newPicture.getPicSize() == null
+                ? 0L : newPicture.getPicSize();
+        return newPicSize - oldPicSize;
+    }
+
+    long calculateSpaceCountDelta(Picture oldPicture) {
+        return oldPicture == null ? 1L : 0L;
     }
 
     @Override
@@ -368,11 +373,8 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             // 释放额度
             Long spaceId = oldPicture.getSpaceId();
             if (spaceId != null) {
-                boolean update = spaceService.lambdaUpdate()
-                        .eq(Space::getId, spaceId)
-                        .setSql("totalSize = totalSize - " + oldPicture.getPicSize())
-                        .setSql("totalCount = totalCount - 1")
-                        .update();
+                long picSize = oldPicture.getPicSize() == null ? 0L : oldPicture.getPicSize();
+                boolean update = spaceService.updateSpaceUsage(spaceId, -picSize, -1L);
                 ThrowUtils.throwIf(!update, ErrorCode.OPERATION_ERROR, "额度更新失败");
             }
             return true;

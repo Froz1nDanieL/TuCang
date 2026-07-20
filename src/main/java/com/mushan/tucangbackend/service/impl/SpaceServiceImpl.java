@@ -240,6 +240,14 @@ public class SpaceServiceImpl extends ServiceImpl<SpaceMapper, Space>
         }
     }
 
+    @Override
+    public boolean updateSpaceUsage(Long spaceId, long sizeDelta, long countDelta) {
+        if (spaceId == null) {
+            return false;
+        }
+        return this.baseMapper.updateSpaceUsage(spaceId, sizeDelta, countDelta) == 1;
+    }
+
 
 
 
