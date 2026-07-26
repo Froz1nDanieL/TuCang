@@ -7,6 +7,7 @@ import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mushan.tucangbackend.api.aliyunai.AliYunAiApi;
@@ -22,6 +23,7 @@ import com.mushan.tucangbackend.manager.upload.FilePictureUpload;
 import com.mushan.tucangbackend.manager.upload.PictureUploadTemplate;
 import com.mushan.tucangbackend.manager.upload.UrlPictureUpload;
 import com.mushan.tucangbackend.manager.upload.AiGenPictureUpload;
+import com.mushan.tucangbackend.mapper.PictureAlbumMapper;
 import com.mushan.tucangbackend.mapper.UserPictureInteractionMapper;
 import com.mushan.tucangbackend.model.dto.aigenhistory.AiGenHistoryAddRequest;
 import com.mushan.tucangbackend.model.dto.file.UploadPictureResult;
@@ -53,7 +55,6 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
@@ -116,6 +117,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     @Resource
     private UserPictureInteractionMapper userPictureInteractionMapper;
+
+    @Resource
+    private PictureAlbumMapper pictureAlbumMapper;
 
     @Lazy
     @Resource
@@ -993,133 +997,62 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean likePicture(Long pictureId, User loginUser) {
-        // 限流校验：每分钟最多10次点赞
+        ThrowUtils.throwIf(pictureId == null || pictureId <= 0, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(loginUser == null || loginUser.getId() == null, ErrorCode.NOT_LOGIN_ERROR);
         if (isRateLimited(loginUser.getId(), "like", 10, 60)) {
             throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作过于频繁，请稍后再试");
         }
 
-        // 检查图片是否存在
-        Picture picture = this.getById(pictureId);
-        if (picture == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
-        }
+        Picture picture = getRequiredPicture(pictureId);
         checkPicturePermission(loginUser, picture, SpaceUserPermissionConstant.PICTURE_VIEW);
 
-        // 查询用户是否已经点赞过该图片
-        QueryWrapper<UserPictureInteraction> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("userId", loginUser.getId())
-                .eq("pictureId", pictureId)
-                .eq("type", 0); // 0 表示点赞
-        UserPictureInteraction interaction = userPictureInteractionMapper.selectOne(queryWrapper);
-
-        boolean isLiked;
-        if (interaction != null) {
-            // 用户已点赞，执行取消点赞操作
-            userPictureInteractionMapper.deleteById(interaction.getId());
-            // 减少图片的点赞数
-            picture.setLikeCount(Math.max(0, picture.getLikeCount() - 1));
-            isLiked = false;
-        } else {
-            // 用户未点赞，执行点赞操作
-            UserPictureInteraction newInteraction = new UserPictureInteraction();
-            newInteraction.setUserId(loginUser.getId());
-            newInteraction.setPictureId(pictureId);
-            newInteraction.setType(0); // 0 表示点赞
-            newInteraction.setCreateTime(new Date());
-            newInteraction.setUpdateTime(new Date());
-            userPictureInteractionMapper.insert(newInteraction);
-            // 增加图片的点赞数
-            picture.setLikeCount(picture.getLikeCount() + 1);
-            isLiked = true;
+        int deletedRows = userPictureInteractionMapper.deleteLike(loginUser.getId(), pictureId);
+        if (deletedRows > 0) {
+            adjustLikeCount(pictureId, -deletedRows);
+            return false;
         }
 
-        // 更新图片的点赞数
-        this.updateById(picture);
-        return isLiked;
+        int insertedRows = userPictureInteractionMapper.insertLikeIgnore(
+                IdWorker.getId(), loginUser.getId(), pictureId);
+        if (insertedRows > 0) {
+            adjustLikeCount(pictureId, insertedRows);
+        }
+        return true;
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean favoritePicture(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
-        // 限流校验：每分钟最多10次收藏
+        ThrowUtils.throwIf(pictureFavoriteRequest == null, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(loginUser == null || loginUser.getId() == null, ErrorCode.NOT_LOGIN_ERROR);
         if (isRateLimited(loginUser.getId(), "favor", 10, 60)) {
             throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作过于频繁，请稍后再试");
         }
 
         Long pictureId = pictureFavoriteRequest.getPictureId();
         Long albumId = pictureFavoriteRequest.getAlbumId();
+        ThrowUtils.throwIf(pictureId == null || pictureId <= 0, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(albumId == null || albumId <= 0, ErrorCode.PARAMS_ERROR, "必须指定收藏夹");
 
-        // 检查图片是否存在
-        Picture picture = this.getById(pictureId);
-        if (picture == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
-        }
+        Picture picture = getRequiredPicture(pictureId);
         checkPicturePermission(loginUser, picture, SpaceUserPermissionConstant.PICTURE_VIEW);
+        getRequiredOwnedAlbum(albumId, loginUser.getId());
 
-        // 必须指定收藏夹
-        if (albumId == null || albumId <= 0) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "必须指定收藏夹");
+        int deletedRows = userPictureInteractionMapper.deleteFavorite(
+                loginUser.getId(), pictureId, albumId);
+        if (deletedRows > 0) {
+            adjustFavoriteCounters(pictureId, albumId, -deletedRows);
+            return false;
         }
 
-        // 检查收藏夹是否存在
-        PictureAlbum pictureAlbum = pictureAlbumService.getById(albumId);
-        if (pictureAlbum == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "收藏夹不存在");
+        int insertedRows = userPictureInteractionMapper.insertFavoriteIgnore(
+                IdWorker.getId(), loginUser.getId(), pictureId, albumId);
+        if (insertedRows > 0) {
+            adjustFavoriteCounters(pictureId, albumId, insertedRows);
         }
-        // 检查收藏夹是否属于当前用户
-        if (!pictureAlbum.getUserId().equals(loginUser.getId())) {
-            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有权限操作该收藏夹");
-        }
-
-        // 查询用户是否已经收藏过该图片到指定收藏夹
-        QueryWrapper<UserPictureInteraction> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("userId", loginUser.getId())
-                .eq("pictureId", pictureId)
-                .eq("albumId", albumId)
-                .eq("type", 1); // 1 表示收藏
-
-        UserPictureInteraction interaction = userPictureInteractionMapper.selectOne(queryWrapper);
-
-        boolean isFavorited;
-        if (interaction != null) {
-            // 用户已收藏到指定收藏夹，执行取消收藏操作
-            userPictureInteractionMapper.deleteById(interaction.getId());
-            // 减少图片的收藏数
-            picture.setFavoriteCount(Math.max(0, picture.getFavoriteCount() - 1));
-            isFavorited = false;
-
-            // 减少该收藏夹的图片数量
-            pictureAlbum.setPictureCount(Math.max(0, pictureAlbum.getPictureCount() - 1));
-            pictureAlbumService.updateById(pictureAlbum);
-        } else {
-            // 用户未收藏到指定收藏夹，执行收藏操作
-            UserPictureInteraction newInteraction = new UserPictureInteraction();
-            newInteraction.setUserId(loginUser.getId());
-            newInteraction.setPictureId(pictureId);
-            newInteraction.setAlbumId(albumId);
-            newInteraction.setType(1); // 1 表示收藏
-            newInteraction.setCreateTime(new Date());
-            newInteraction.setUpdateTime(new Date());
-
-            try {
-                userPictureInteractionMapper.insert(newInteraction);
-            } catch (DuplicateKeyException e) {
-                // 如果并发插入导致重复键错误，忽略该错误并认为收藏成功
-                log.warn("并发插入收藏记录时发生重复键错误，忽略该错误: {}", e.getMessage());
-            }
-
-            // 增加图片的收藏数
-            picture.setFavoriteCount(picture.getFavoriteCount() + 1);
-            isFavorited = true;
-
-            // 增加该收藏夹的图片数量
-            pictureAlbum.setPictureCount(pictureAlbum.getPictureCount() + 1);
-            pictureAlbumService.updateById(pictureAlbum);
-        }
-
-        // 更新图片的收藏数
-        this.updateById(picture);
-        return isFavorited;
+        return true;
     }
 
 
@@ -1219,131 +1152,53 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean addPictureToAlbum(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
-        // 限流校验：每分钟最多10次收藏
+        ThrowUtils.throwIf(pictureFavoriteRequest == null, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(loginUser == null || loginUser.getId() == null, ErrorCode.NOT_LOGIN_ERROR);
         if (isRateLimited(loginUser.getId(), "favor", 10, 60)) {
             throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作过于频繁，请稍后再试");
         }
 
         Long pictureId = pictureFavoriteRequest.getPictureId();
         Long albumId = pictureFavoriteRequest.getAlbumId();
+        ThrowUtils.throwIf(pictureId == null || pictureId <= 0, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(albumId == null || albumId <= 0, ErrorCode.PARAMS_ERROR, "必须指定收藏夹");
 
-        // 检查图片是否存在
-        Picture picture = this.getById(pictureId);
-        if (picture == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
-        }
+        Picture picture = getRequiredPicture(pictureId);
+        checkPicturePermission(loginUser, picture, SpaceUserPermissionConstant.PICTURE_VIEW);
+        getRequiredOwnedAlbum(albumId, loginUser.getId());
 
-        // 必须指定收藏夹
-        if (albumId == null || albumId <= 0) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "必须指定收藏夹");
-        }
-
-        // 检查收藏夹是否存在
-        PictureAlbum pictureAlbum = pictureAlbumService.getById(albumId);
-        if (pictureAlbum == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "收藏夹不存在");
-        }
-        // 检查收藏夹是否属于当前用户
-        if (!pictureAlbum.getUserId().equals(loginUser.getId())) {
-            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有权限操作该收藏夹");
-        }
-
-        // 查询用户是否已经将该图片添加到此收藏夹
-        QueryWrapper<UserPictureInteraction> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("userId", loginUser.getId())
-                .eq("pictureId", pictureId)
-                .eq("albumId", albumId)
-                .eq("type", 1); // 1 表示收藏
-        UserPictureInteraction interaction = userPictureInteractionMapper.selectOne(queryWrapper);
-
-        if (interaction != null) {
-            // 图片已存在于该收藏夹中
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, "图片已存在于该收藏夹中");
-        }
-
-        // 将图片添加到指定收藏夹
-        UserPictureInteraction newInteraction = new UserPictureInteraction();
-        newInteraction.setUserId(loginUser.getId());
-        newInteraction.setPictureId(pictureId);
-        newInteraction.setAlbumId(albumId);
-        newInteraction.setType(1); // 1 表示收藏
-        newInteraction.setCreateTime(new Date());
-        newInteraction.setUpdateTime(new Date());
-
-        try {
-            userPictureInteractionMapper.insert(newInteraction);
-        } catch (DuplicateKeyException e) {
-            // 如果并发插入导致重复键错误，忽略该错误并认为收藏成功
-            log.warn("并发插入收藏记录时发生重复键错误，忽略该错误: {}", e.getMessage());
-            return true;
-        }
-
-        // 增加收藏夹的图片数量
-        pictureAlbum.setPictureCount(pictureAlbum.getPictureCount() + 1);
-        pictureAlbumService.updateById(pictureAlbum);
-
-        // 增加图片的收藏数
-        picture.setFavoriteCount(picture.getFavoriteCount() + 1);
-        this.updateById(picture);
+        int insertedRows = userPictureInteractionMapper.insertFavoriteIgnore(
+                IdWorker.getId(), loginUser.getId(), pictureId, albumId);
+        ThrowUtils.throwIf(insertedRows == 0, ErrorCode.OPERATION_ERROR, "图片已存在于该收藏夹中");
+        adjustFavoriteCounters(pictureId, albumId, insertedRows);
 
         return true;
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Boolean removePictureFromAlbum(PictureFavoriteRequest pictureFavoriteRequest, User loginUser) {
-        // 限流校验：每分钟最多10次收藏
+        ThrowUtils.throwIf(pictureFavoriteRequest == null, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(loginUser == null || loginUser.getId() == null, ErrorCode.NOT_LOGIN_ERROR);
         if (isRateLimited(loginUser.getId(), "favor", 10, 60)) {
             throw new BusinessException(ErrorCode.OPERATION_ERROR, "操作过于频繁，请稍后再试");
         }
 
         Long pictureId = pictureFavoriteRequest.getPictureId();
         Long albumId = pictureFavoriteRequest.getAlbumId();
+        ThrowUtils.throwIf(pictureId == null || pictureId <= 0, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(albumId == null || albumId <= 0, ErrorCode.PARAMS_ERROR, "必须指定收藏夹");
 
-        // 检查图片是否存在
-        Picture picture = this.getById(pictureId);
-        if (picture == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在");
-        }
+        Picture picture = getRequiredPicture(pictureId);
+        checkPicturePermission(loginUser, picture, SpaceUserPermissionConstant.PICTURE_VIEW);
+        getRequiredOwnedAlbum(albumId, loginUser.getId());
 
-        // 必须指定收藏夹
-        if (albumId == null || albumId <= 0) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR, "必须指定收藏夹");
-        }
-
-        // 检查收藏夹是否存在
-        PictureAlbum pictureAlbum = pictureAlbumService.getById(albumId);
-        if (pictureAlbum == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "收藏夹不存在");
-        }
-        // 检查收藏夹是否属于当前用户
-        if (!pictureAlbum.getUserId().equals(loginUser.getId())) {
-            throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有权限操作该收藏夹");
-        }
-
-        // 查询用户是否已将该图片添加到此收藏夹
-        QueryWrapper<UserPictureInteraction> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("userId", loginUser.getId())
-                .eq("pictureId", pictureId)
-                .eq("albumId", albumId)
-                .eq("type", 1); // 1 表示收藏
-        UserPictureInteraction interaction = userPictureInteractionMapper.selectOne(queryWrapper);
-
-        if (interaction == null) {
-            // 图片不存在于该收藏夹中
-            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图片不存在于该收藏夹中");
-        }
-
-        // 从收藏夹中移除图片
-        userPictureInteractionMapper.deleteById(interaction.getId());
-
-        // 减少收藏夹的图片数量
-        pictureAlbum.setPictureCount(Math.max(0, pictureAlbum.getPictureCount() - 1));
-        pictureAlbumService.updateById(pictureAlbum);
-
-        // 减少图片的收藏数
-        picture.setFavoriteCount(Math.max(0, picture.getFavoriteCount() - 1));
-        this.updateById(picture);
+        int deletedRows = userPictureInteractionMapper.deleteFavorite(
+                loginUser.getId(), pictureId, albumId);
+        ThrowUtils.throwIf(deletedRows == 0, ErrorCode.NOT_FOUND_ERROR, "图片不存在于该收藏夹中");
+        adjustFavoriteCounters(pictureId, albumId, -deletedRows);
 
         return true;
     }
@@ -1628,6 +1483,32 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         ));
 
         return searchQueryBuilder.build();
+    }
+
+    private Picture getRequiredPicture(Long pictureId) {
+        Picture picture = this.getById(pictureId);
+        ThrowUtils.throwIf(picture == null, ErrorCode.NOT_FOUND_ERROR, "图片不存在");
+        return picture;
+    }
+
+    private PictureAlbum getRequiredOwnedAlbum(Long albumId, Long userId) {
+        PictureAlbum pictureAlbum = pictureAlbumService.getById(albumId);
+        ThrowUtils.throwIf(pictureAlbum == null, ErrorCode.NOT_FOUND_ERROR, "收藏夹不存在");
+        ThrowUtils.throwIf(!userId.equals(pictureAlbum.getUserId()), ErrorCode.NO_AUTH_ERROR,
+                "没有权限操作该收藏夹");
+        return pictureAlbum;
+    }
+
+    private void adjustLikeCount(Long pictureId, int delta) {
+        int updatedRows = getBaseMapper().adjustLikeCount(pictureId, delta);
+        ThrowUtils.throwIf(updatedRows != 1, ErrorCode.OPERATION_ERROR, "更新图片点赞数失败");
+    }
+
+    private void adjustFavoriteCounters(Long pictureId, Long albumId, int delta) {
+        int pictureUpdatedRows = getBaseMapper().adjustFavoriteCount(pictureId, delta);
+        ThrowUtils.throwIf(pictureUpdatedRows != 1, ErrorCode.OPERATION_ERROR, "更新图片收藏数失败");
+        int albumUpdatedRows = pictureAlbumMapper.adjustPictureCount(albumId, delta);
+        ThrowUtils.throwIf(albumUpdatedRows != 1, ErrorCode.OPERATION_ERROR, "更新收藏夹图片数失败");
     }
 
     // 限流工具方法

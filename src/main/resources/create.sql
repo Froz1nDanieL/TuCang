@@ -182,8 +182,9 @@ create table user_picture_interaction
     createTime datetime default CURRENT_TIMESTAMP null comment '创建时间',
     updateTime datetime default CURRENT_TIMESTAMP null on update CURRENT_TIMESTAMP comment '更新时间',
     albumId    bigint                             null comment '收藏夹ID',
-    constraint uniq_user_picture_type_album
-        unique (userId, pictureId, type, albumId)
+    albumIdKey bigint generated always as (coalesce(albumId, 0)) stored comment '收藏夹ID唯一键归一化值',
+    constraint uniq_user_picture_type_album_key
+        unique (userId, pictureId, type, albumIdKey)
 )
     comment '用户图片互动记录表';
 

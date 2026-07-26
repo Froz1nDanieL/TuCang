@@ -3,6 +3,8 @@ package com.mushan.tucangbackend.mapper;
 import com.mushan.tucangbackend.model.entity.Picture;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
+import org.apache.ibatis.annotations.Param;
 
 import java.util.Date;
 import java.util.List;
@@ -23,4 +25,12 @@ public interface PictureMapper extends BaseMapper<Picture> {
      */
     @Select("SELECT * FROM picture WHERE updateTime >= #{minUpdateTime}")
     List<Picture> listPictureWithDelete(Date minUpdateTime);
+
+    @Update("UPDATE picture SET likeCount = GREATEST(COALESCE(likeCount, 0) + #{delta}, 0) " +
+            "WHERE id = #{pictureId} AND isDelete = 0")
+    int adjustLikeCount(@Param("pictureId") Long pictureId, @Param("delta") int delta);
+
+    @Update("UPDATE picture SET favoriteCount = GREATEST(COALESCE(favoriteCount, 0) + #{delta}, 0) " +
+            "WHERE id = #{pictureId} AND isDelete = 0")
+    int adjustFavoriteCount(@Param("pictureId") Long pictureId, @Param("delta") int delta);
 }

@@ -221,10 +221,11 @@ public class PictureController {
     @PostMapping("/list/page/vo/cache")
     public BaseResponse<Page<PictureVO>> listPictureVOByPage(@RequestBody PictureQueryRequest pictureQueryRequest,
                                                              HttpServletRequest request) {
+        ThrowUtils.throwIf(pictureQueryRequest == null, ErrorCode.PARAMS_ERROR);
         long current = pictureQueryRequest.getCurrent();
         long size = pictureQueryRequest.getPageSize();
         // 限制爬虫
-        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(size <= 0 || size > 20, ErrorCode.PARAMS_ERROR);
         // 空间权限校验
         Long spaceId = pictureQueryRequest.getSpaceId();
         // 公开图库
@@ -235,14 +236,6 @@ public class PictureController {
         } else {
             boolean hasPermission = StpKit.SPACE.hasPermission(SpaceUserPermissionConstant.PICTURE_VIEW);
             ThrowUtils.throwIf(!hasPermission, ErrorCode.NO_AUTH_ERROR);
-            // 已经改为saToken鉴权
-        //  // 私有空间
-        //  User loginUser = userService.getLoginUser(request);
-        //  Space space = spaceService.getById(spaceId);
-        //  ThrowUtils.throwIf(space == null, ErrorCode.NOT_FOUND_ERROR, "空间不存在");
-        //  if (!loginUser.getId().equals(space.getUserId())) {
-        //      throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "没有空间权限");
-        //  }
         }
 
         // 查询数据库
@@ -253,18 +246,23 @@ public class PictureController {
     }
 
     /**
-     * 分页获取图片列表（封装类）
+     * 分页获取公共图库图片列表（封装类，带缓存）
      */
     @PostMapping("/list/page/vo")
-    public BaseResponse<Page<PictureVO>> listPictureVOByPageCache(@RequestBody PictureQueryRequest pictureQueryRequest,
-                                                             HttpServletRequest request) {
+    public BaseResponse<Page<PictureVO>> listPublicPictureVOByPageCache(
+            @RequestBody PictureQueryRequest pictureQueryRequest,
+            HttpServletRequest request) {
+        ThrowUtils.throwIf(pictureQueryRequest == null, ErrorCode.PARAMS_ERROR);
         long current = pictureQueryRequest.getCurrent();
         long size = pictureQueryRequest.getPageSize();
         // 限制爬虫
-        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
-        // 普通用户默认只能查看已过审的数据
+        ThrowUtils.throwIf(size <= 0 || size > 20, ErrorCode.PARAMS_ERROR);
+        // 该接口只用于公共图库，空间图片必须走带空间鉴权的接口
+        ThrowUtils.throwIf(pictureQueryRequest.getSpaceId() != null, ErrorCode.PARAMS_ERROR,
+                "公共图库接口不支持查询空间图片");
         pictureQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
-        //构建缓存key
+        pictureQueryRequest.setNullSpaceId(true);
+        // 构建缓存 key
         String pictureCondition = JSONUtil.toJsonStr(pictureQueryRequest);
         String cacheKey = DigestUtil.md5Hex(pictureCondition);
         String redisKey = String.format("tucang:listPictureVOByPage:%s", cacheKey);
@@ -277,7 +275,7 @@ public class PictureController {
         }
         // 2. 查询分布式缓存（Redis）
         ValueOperations<String, String> valueOps = stringRedisTemplate.opsForValue();
-        cachedValue = valueOps.get(cacheKey);
+        cachedValue = valueOps.get(redisKey);
         if (cachedValue != null) {
             // 如果命中 Redis，存入本地缓存并返回
             LOCAL_CACHE.put(cacheKey, cachedValue);
@@ -293,7 +291,7 @@ public class PictureController {
         // 更新本地缓存
         LOCAL_CACHE.put(cacheKey, cacheValue);
         // 更新 Redis 缓存，设置过期时间为 5 分钟
-        valueOps.set(cacheKey, cacheValue, 5, TimeUnit.MINUTES);
+        valueOps.set(redisKey, cacheValue, 5, TimeUnit.MINUTES);
 
 
         // 获取封装类
