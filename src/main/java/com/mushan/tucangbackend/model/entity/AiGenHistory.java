@@ -35,6 +35,16 @@ public class AiGenHistory {
     private String taskId;
 
     /**
+     * AI 任务类型：0-文生图，1-扩图
+     */
+    private Integer taskType;
+
+    /**
+     * 源图片 ID，仅扩图任务使用
+     */
+    private Long sourcePictureId;
+
+    /**
      * 生成图片URL
      */
     private String imageUrl;

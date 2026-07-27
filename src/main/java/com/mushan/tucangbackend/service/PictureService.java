@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.mushan.tucangbackend.api.aliyunai.model.CreateOutPaintingTaskResponse;
 import com.mushan.tucangbackend.api.aliyunai.model.CreateTextToImageTaskResponse;
+import com.mushan.tucangbackend.api.aliyunai.model.GetOutPaintingTaskResponse;
 import com.mushan.tucangbackend.api.aliyunai.model.GetTextToImageTaskResponse;
 import com.mushan.tucangbackend.model.dto.picture.*;
 import com.mushan.tucangbackend.model.entity.Picture;
@@ -83,6 +84,11 @@ public interface PictureService extends IService<Picture> {
     Page<PictureVO> getPictureVOPage(Page<Picture> picturePage, HttpServletRequest request);
 
     CreateOutPaintingTaskResponse createPictureOutPaintingTask(CreatePictureOutPaintingRequest createPictureOutPaintingRequest, User loginUser);
+
+    /**
+     * 查询当前用户创建的扩图任务。
+     */
+    GetOutPaintingTaskResponse getPictureOutPaintingTask(String taskId, User loginUser);
     
     /**
      * 创建文本生成图像任务
@@ -99,7 +105,7 @@ public interface PictureService extends IService<Picture> {
      *  @param taskId
      *  @return
      */
-    GetTextToImageTaskResponse getTextToImageTask(String taskId);
+    GetTextToImageTaskResponse getTextToImageTask(String taskId, User loginUser);
 
     /**
      * 校验图片

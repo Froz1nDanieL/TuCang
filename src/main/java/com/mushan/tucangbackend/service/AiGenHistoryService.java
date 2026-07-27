@@ -25,6 +25,16 @@ public interface AiGenHistoryService extends IService<AiGenHistory> {
     long addAiGenHistory(AiGenHistoryAddRequest aiGenHistoryAddRequest, User loginUser);
 
     /**
+     * 查询当前用户拥有的 AI 任务。
+     *
+     * @param taskId 供应商任务 ID
+     * @param userId 当前用户 ID
+     * @param taskType AI 任务类型
+     * @return 任务记录，不存在或不属于当前用户时返回 null
+     */
+    AiGenHistory getOwnedTask(String taskId, Long userId, Integer taskType);
+
+    /**
      * 获取用户AI生成历史列表
      *
      * @param userId 用户ID

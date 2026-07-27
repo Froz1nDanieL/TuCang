@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mushan.tucangbackend.model.dto.aigenhistory.AiGenHistoryAddRequest;
 import com.mushan.tucangbackend.model.entity.AiGenHistory;
 import com.mushan.tucangbackend.model.entity.User;
+import com.mushan.tucangbackend.model.enums.AiGenerationTaskTypeEnum;
 import com.mushan.tucangbackend.model.vo.AiGenHistoryVO;
 import com.mushan.tucangbackend.service.AiGenHistoryService;
 import com.mushan.tucangbackend.mapper.AiGenHistoryMapper;
@@ -32,10 +33,21 @@ public class AiGenHistoryServiceImpl extends ServiceImpl<AiGenHistoryMapper, AiG
         aiGenHistory.setUserId(loginUser.getId());
         aiGenHistory.setPrompt(aiGenHistoryAddRequest.getPrompt());
         aiGenHistory.setTaskId(aiGenHistoryAddRequest.getTaskId());
+        aiGenHistory.setTaskType(aiGenHistoryAddRequest.getTaskType());
+        aiGenHistory.setSourcePictureId(aiGenHistoryAddRequest.getSourcePictureId());
         aiGenHistory.setStatus(aiGenHistoryAddRequest.getStatus());
         aiGenHistory.setCreateTime(new Date());
         this.save(aiGenHistory);
         return aiGenHistory.getId();
+    }
+
+    @Override
+    public AiGenHistory getOwnedTask(String taskId, Long userId, Integer taskType) {
+        QueryWrapper<AiGenHistory> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("taskId", taskId)
+                .eq("userId", userId)
+                .eq("taskType", taskType);
+        return this.getOne(queryWrapper, false);
     }
 
     @Override
@@ -45,6 +57,7 @@ public class AiGenHistoryServiceImpl extends ServiceImpl<AiGenHistoryMapper, AiG
         
         QueryWrapper<AiGenHistory> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("userId", userId);
+        queryWrapper.eq("taskType", AiGenerationTaskTypeEnum.TEXT_TO_IMAGE.getValue());
         queryWrapper.gt("createTime", threeDaysAgo); // 只查询三天内的记录
         queryWrapper.orderByDesc("createTime");
         return this.list(queryWrapper).stream().map(this::convertToVO).collect(Collectors.toList());

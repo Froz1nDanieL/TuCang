@@ -9,7 +9,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.mushan.tucangbackend.annotation.AuthCheck;
-import com.mushan.tucangbackend.api.aliyunai.AliYunAiApi;
 import com.mushan.tucangbackend.api.aliyunai.model.CreateOutPaintingTaskResponse;
 import com.mushan.tucangbackend.api.aliyunai.model.CreateTextToImageTaskResponse;
 import com.mushan.tucangbackend.api.aliyunai.model.GetTextToImageTaskResponse;
@@ -73,9 +72,6 @@ public class PictureController {
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
-
-    @Resource
-    private AliYunAiApi aliYunAiApi;
 
     private final Cache<String, String> LOCAL_CACHE =
             Caffeine.newBuilder().initialCapacity(1024)
@@ -437,9 +433,11 @@ public class PictureController {
      * 查询 AI 扩图任务
      */
     @GetMapping("/out_painting/get_task")
-    public BaseResponse<GetOutPaintingTaskResponse> getPictureOutPaintingTask(String taskId) {
+    public BaseResponse<GetOutPaintingTaskResponse> getPictureOutPaintingTask(
+            String taskId, HttpServletRequest request) {
         ThrowUtils.throwIf(StrUtil.isBlank(taskId), ErrorCode.PARAMS_ERROR);
-        GetOutPaintingTaskResponse task = aliYunAiApi.getOutPaintingTask(taskId);
+        User loginUser = userService.getLoginUser(request);
+        GetOutPaintingTaskResponse task = pictureService.getPictureOutPaintingTask(taskId, loginUser);
         return ResultUtils.success(task);
     }
 
@@ -450,7 +448,7 @@ public class PictureController {
     public BaseResponse<GetTextToImageTaskResponse> getTextToImageTask(String taskId, HttpServletRequest request) {
         ThrowUtils.throwIf(StrUtil.isBlank(taskId), ErrorCode.PARAMS_ERROR);
         User loginUser = userService.getLoginUser(request);
-        GetTextToImageTaskResponse task = pictureService.getTextToImageTask(taskId);
+        GetTextToImageTaskResponse task = pictureService.getTextToImageTask(taskId, loginUser);
         return ResultUtils.success(task);
     }
 

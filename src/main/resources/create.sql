@@ -63,10 +63,14 @@ create table ai_gen_history
     userId     bigint                             not null comment '用户ID',
     prompt     varchar(512)                       not null comment '用户提示词',
     taskId     varchar(255)                       null comment '外部任务ID',
+    taskType   tinyint  default 0                 not null comment 'AI任务类型：0-文生图，1-扩图',
+    sourcePictureId bigint                        null comment '扩图任务的源图片ID',
     imageUrl   varchar(512)                       null comment '生成图片URL',
     imageSize  varchar(32)                        null comment '图片尺寸',
     status     tinyint  default 1                 null comment '状态: 1-成功, 2-失败',
-    createTime datetime default CURRENT_TIMESTAMP not null comment '创建时间'
+    createTime datetime default CURRENT_TIMESTAMP not null comment '创建时间',
+    constraint uniq_ai_gen_task_type_task_id
+        unique (taskType, taskId)
 );
 
 create index idx_create_time

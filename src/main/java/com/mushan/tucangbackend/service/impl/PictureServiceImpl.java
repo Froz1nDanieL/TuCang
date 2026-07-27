@@ -29,6 +29,7 @@ import com.mushan.tucangbackend.model.dto.aigenhistory.AiGenHistoryAddRequest;
 import com.mushan.tucangbackend.model.dto.file.UploadPictureResult;
 import com.mushan.tucangbackend.model.dto.picture.*;
 import com.mushan.tucangbackend.model.entity.*;
+import com.mushan.tucangbackend.model.enums.AiGenerationTaskTypeEnum;
 import com.mushan.tucangbackend.model.enums.PictureReviewStatusEnum;
 import com.mushan.tucangbackend.model.es.PictureEsDTO;
 import com.mushan.tucangbackend.model.vo.PictureAlbumVO;
@@ -538,7 +539,30 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         taskRequest.setInput(input);
         BeanUtil.copyProperties(createPictureOutPaintingRequest, taskRequest);
         // 创建任务
-        return aliYunAiApi.createOutPaintingTask(taskRequest);
+        CreateOutPaintingTaskResponse response = aliYunAiApi.createOutPaintingTask(taskRequest);
+        String taskId = Optional.ofNullable(response)
+                .map(CreateOutPaintingTaskResponse::getOutput)
+                .map(CreateOutPaintingTaskResponse.Output::getTaskId)
+                .filter(StrUtil::isNotBlank)
+                .orElseThrow(() -> new BusinessException(
+                        ErrorCode.OPERATION_ERROR, "AI 扩图任务创建失败，未返回任务 ID"));
+
+        // 保存任务归属，后续只能由创建任务的用户查询
+        AiGenHistoryAddRequest aiGenHistoryAddRequest = new AiGenHistoryAddRequest();
+        aiGenHistoryAddRequest.setPrompt("");
+        aiGenHistoryAddRequest.setTaskId(taskId);
+        aiGenHistoryAddRequest.setTaskType(AiGenerationTaskTypeEnum.OUT_PAINTING.getValue());
+        aiGenHistoryAddRequest.setSourcePictureId(pictureId);
+        aiGenHistoryAddRequest.setStatus(1);
+        aiGenHistoryService.addAiGenHistory(aiGenHistoryAddRequest, loginUser);
+        return response;
+    }
+
+    @Override
+    public GetOutPaintingTaskResponse getPictureOutPaintingTask(String taskId, User loginUser) {
+        getRequiredOwnedAiGenerationTask(
+                taskId, loginUser, AiGenerationTaskTypeEnum.OUT_PAINTING);
+        return aliYunAiApi.getOutPaintingTask(taskId);
     }
 
     /**
@@ -588,6 +612,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         aiGenHistoryAddRequest.setPrompt(createTextToImageRequest.getPrompt());
         aiGenHistoryAddRequest.setStatus(1);
         aiGenHistoryAddRequest.setTaskId(textToImageTask.getOutput().getTaskId());
+        aiGenHistoryAddRequest.setTaskType(AiGenerationTaskTypeEnum.TEXT_TO_IMAGE.getValue());
         aiGenHistoryService.addAiGenHistory(aiGenHistoryAddRequest, loginUser);
 
         // 创建任务
@@ -595,7 +620,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     }
 
     @Override
-    public GetTextToImageTaskResponse getTextToImageTask(String taskId) {
+    public GetTextToImageTaskResponse getTextToImageTask(String taskId, User loginUser) {
+        AiGenHistory ownedTask = getRequiredOwnedAiGenerationTask(
+                taskId, loginUser, AiGenerationTaskTypeEnum.TEXT_TO_IMAGE);
         // 调用阿里云API获取任务状态
         GetTextToImageTaskResponse response = aliYunAiApi.getTextToImageTask(taskId);
 
@@ -622,7 +649,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
                 }
 
                 UpdateWrapper<AiGenHistory> updateWrapper = new UpdateWrapper<>();
-                updateWrapper.eq("taskId", taskId).set("status", aiGenStatus);
+                updateWrapper.eq("id", ownedTask.getId())
+                        .eq("userId", loginUser.getId())
+                        .set("status", aiGenStatus);
 
                 // 如果任务成功，还需要保存图片URL列表
                 if ("SUCCEEDED".equals(taskStatus) && response.getOutput().getResults() != null
@@ -644,6 +673,20 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             }
         }
         return response;
+    }
+
+    /**
+     * 获取当前用户拥有的 AI 任务。对不存在和不属于当前用户的任务统一返回不存在，
+     * 避免通过错误码枚举其他用户的任务 ID。
+     */
+    private AiGenHistory getRequiredOwnedAiGenerationTask(
+            String taskId, User loginUser, AiGenerationTaskTypeEnum taskType) {
+        ThrowUtils.throwIf(StrUtil.isBlank(taskId), ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(loginUser == null || loginUser.getId() == null, ErrorCode.NOT_LOGIN_ERROR);
+        AiGenHistory ownedTask = aiGenHistoryService.getOwnedTask(
+                taskId, loginUser.getId(), taskType.getValue());
+        ThrowUtils.throwIf(ownedTask == null, ErrorCode.NOT_FOUND_ERROR, "AI 任务不存在");
+        return ownedTask;
     }
 
     /**
