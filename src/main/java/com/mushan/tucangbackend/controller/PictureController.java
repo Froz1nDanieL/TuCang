@@ -37,6 +37,8 @@ import com.mushan.tucangbackend.model.vo.PictureCursorQueryVO;
 import com.mushan.tucangbackend.model.vo.PictureTagCategory;
 import com.mushan.tucangbackend.model.vo.PictureVO;
 import com.mushan.tucangbackend.service.PictureService;
+import com.mushan.tucangbackend.service.PictureCacheService;
+import com.mushan.tucangbackend.service.PictureChangeNotifier;
 import com.mushan.tucangbackend.service.SpaceService;
 import com.mushan.tucangbackend.service.UserService;
 import lombok.extern.slf4j.Slf4j;
@@ -72,6 +74,12 @@ public class PictureController {
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private PictureCacheService pictureCacheService;
+
+    @Resource
+    private PictureChangeNotifier pictureChangeNotifier;
 
     private final Cache<String, String> LOCAL_CACHE =
             Caffeine.newBuilder().initialCapacity(1024)
@@ -137,6 +145,7 @@ public class PictureController {
         // 操作数据库
         boolean result = pictureService.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        pictureChangeNotifier.upsert(picture.getId());
         return ResultUtils.success(true);
     }
 
@@ -260,7 +269,7 @@ public class PictureController {
         pictureQueryRequest.setNullSpaceId(true);
         // 构建缓存 key
         String pictureCondition = JSONUtil.toJsonStr(pictureQueryRequest);
-        String cacheKey = DigestUtil.md5Hex(pictureCondition);
+        String cacheKey = pictureCacheService.getVersion() + ":" + DigestUtil.md5Hex(pictureCondition);
         String redisKey = String.format("tucang:listPictureVOByPage:%s", cacheKey);
 
         // 1. 查询本地缓存（Caffeine）

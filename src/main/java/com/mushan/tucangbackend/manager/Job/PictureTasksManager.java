@@ -9,6 +9,7 @@ import com.mushan.tucangbackend.service.PictureAlbumService;
 import com.mushan.tucangbackend.service.PictureService;
 import com.mushan.tucangbackend.service.UserService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -26,6 +27,11 @@ import java.util.concurrent.TimeUnit;
  * 负责执行各种定时任务
  */
 @Component
+@ConditionalOnProperty(
+        prefix = "tucang.jobs",
+        name = "picture-tasks-enabled",
+        havingValue = "true"
+)
 @Slf4j
 public class PictureTasksManager {
 

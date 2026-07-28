@@ -7,6 +7,7 @@ import lombok.Getter;
 public enum UserRoleEnum {
 
     USER("用户", "user"),
+    REVIEWER("审核员", "reviewer"),
     ADMIN("管理员", "admin");
 
     private final String text;

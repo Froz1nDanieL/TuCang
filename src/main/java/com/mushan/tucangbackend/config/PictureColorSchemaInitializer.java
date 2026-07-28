@@ -3,6 +3,7 @@ package com.mushan.tucangbackend.config;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,6 +21,7 @@ import java.util.Set;
  * 每个字段独立检查和创建，避免一个重复字段导致整条 ALTER TABLE 回滚。
  */
 @Component
+@ConditionalOnProperty(prefix = "tucang.database", name = "initialize-picture-color-schema", havingValue = "true")
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @Slf4j
 public class PictureColorSchemaInitializer implements ApplicationRunner {

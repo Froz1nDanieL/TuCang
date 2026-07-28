@@ -18,6 +18,7 @@ import com.qcloud.cos.model.PutObjectResult;
 import com.qcloud.cos.model.ciModel.persistence.CIObject;
 import com.qcloud.cos.model.ciModel.persistence.ImageInfo;
 import com.qcloud.cos.model.ciModel.persistence.ProcessResults;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Resource;
@@ -33,6 +34,9 @@ public abstract class PictureUploadTemplate {
   
     @Resource
     protected CosClientConfig cosClientConfig;
+
+    @Resource
+    protected MeterRegistry meterRegistry;
   
     /**  
      * 模板方法，定义上传流程  
@@ -77,12 +81,18 @@ public abstract class PictureUploadTemplate {
                     thumbnailCiObject = objectList.get(1);
                 }
                 // 封装压缩图返回结果
-                return buildResult(originFilename, compressedCiObject, thumbnailCiObject, imageInfo, colorAnalysisResult);
+                UploadPictureResult result = buildResult(
+                        originFilename, compressedCiObject, thumbnailCiObject, imageInfo, colorAnalysisResult);
+                meterRegistry.counter("tucang.picture.upload", "result", "success").increment();
+                return result;
             }
             // 封装原图返回结果
-            return buildResult(originFilename, file, uploadPath, imageInfo, colorAnalysisResult);
+            UploadPictureResult result = buildResult(originFilename, file, uploadPath, imageInfo, colorAnalysisResult);
+            meterRegistry.counter("tucang.picture.upload", "result", "success").increment();
+            return result;
         } catch (Exception e) {
             log.error("图片上传到对象存储失败", e);
+            meterRegistry.counter("tucang.picture.upload", "result", "failed").increment();
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "上传失败");
         } finally {
             // 6. 清理临时文件  

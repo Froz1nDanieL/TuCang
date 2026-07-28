@@ -3,11 +3,13 @@ package com.mushan.tucangbackend;
 import com.mushan.tucangbackend.manager.Job.PictureTasksManager;
 import com.mushan.tucangbackend.service.UserService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Disabled;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import javax.annotation.Resource;
 
 @SpringBootTest
+@Disabled("手动集成测试，默认测试不得连接外部服务")
 class TuCangBackendApplicationTests {
 
     @Resource

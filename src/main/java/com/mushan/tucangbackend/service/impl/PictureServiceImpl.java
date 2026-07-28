@@ -138,6 +138,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     @Resource
     private ElasticsearchRestTemplate elasticsearchRestTemplate;
 
+    @Resource
+    private PictureChangeNotifier pictureChangeNotifier;
+
     @Override
     public PictureVO uploadPicture(Object inputSource, PictureUploadRequest pictureUploadRequest, User loginUser) {
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
@@ -250,6 +253,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             }
             return picture;
         });
+        notifyPictureUpsert(picture.getId());
         return PictureVO.objToVo(picture);
     }
 
@@ -358,6 +362,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         // 操作数据库
         boolean result = this.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        notifyPictureUpsert(picture.getId());
     }
 
 
@@ -384,6 +389,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             }
             return true;
         });
+        notifyPictureDelete(pictureId);
         // 异步清理文件
         this.clearPictureFile(oldPicture);
     }
@@ -451,7 +457,12 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             }
         }
         // 排序
-        queryWrapper.orderBy(StrUtil.isNotEmpty(sortField), sortOrder.equals("ascend"), sortField);
+        List<String> allowedSortFields = Arrays.asList(
+                "id", "name", "category", "picSize", "reviewStatus", "createTime", "editTime", "updateTime",
+                "likeCount", "favoriteCount"
+        );
+        boolean sortable = StrUtil.isNotEmpty(sortField) && allowedSortFields.contains(sortField);
+        queryWrapper.orderBy(sortable, "ascend".equals(sortOrder), sortField);
         return queryWrapper;
     }
 
@@ -780,8 +791,11 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         BeanUtils.copyProperties(pictureReviewRequest, updatePicture);
         updatePicture.setReviewerId(loginUser.getId());
         updatePicture.setReviewTime(new Date());
-        boolean result = this.updateById(updatePicture);
-        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        UpdateWrapper<Picture> updateWrapper = new UpdateWrapper<>();
+        updateWrapper.eq("id", id).eq("reviewStatus", oldPicture.getReviewStatus());
+        boolean result = this.update(updatePicture, updateWrapper);
+        ThrowUtils.throwIf(!result, ErrorCode.CONFLICT_ERROR, "图片审核状态已被其他审核员修改");
+        notifyPictureUpsert(id);
     }
 
     @Override
@@ -906,6 +920,23 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         // 5. 批量更新
         boolean result = this.updateBatchById(pictureList);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        if (pictureChangeNotifier != null) {
+            pictureChangeNotifier.upsertAll(pictureList.stream()
+                    .map(Picture::getId)
+                    .collect(Collectors.toList()));
+        }
+    }
+
+    private void notifyPictureUpsert(Long pictureId) {
+        if (pictureChangeNotifier != null) {
+            pictureChangeNotifier.upsert(pictureId);
+        }
+    }
+
+    private void notifyPictureDelete(Long pictureId) {
+        if (pictureChangeNotifier != null) {
+            pictureChangeNotifier.delete(pictureId);
+        }
     }
 
 
@@ -980,6 +1011,12 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         boolean nullSpaceId = pictureCursorQueryRequest.isNullSpaceId();
         String sortField = pictureCursorQueryRequest.getSortField();
         String sortOrder = pictureCursorQueryRequest.getSortOrder();
+        List<String> cursorSortFields = Arrays.asList(
+                "id", "createTime", "editTime", "updateTime", "likeCount", "favoriteCount"
+        );
+        if (StrUtil.isBlank(sortField) || !cursorSortFields.contains(sortField)) {
+            sortField = "id";
+        }
 
         // 从多字段中搜索
         if (StrUtil.isNotBlank(searchText)) {
@@ -1031,9 +1068,6 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
         // 设置排序
         // 默认按id升序排序
-        if (StrUtil.isBlank(sortField)) {
-            sortField = "id";
-        }
         queryWrapper.orderBy(true, !"descend".equals(sortOrder), sortField);
 
         return queryWrapper;
@@ -1391,6 +1425,12 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         boolean nullSpaceId = pictureCursorQueryRequest.isNullSpaceId();
         String sortField = pictureCursorQueryRequest.getSortField();
         String sortOrder = pictureCursorQueryRequest.getSortOrder();
+        List<String> esSortFields = Arrays.asList(
+                "id", "createTime", "editTime", "updateTime", "likeCount", "favoriteCount", "picSize"
+        );
+        if (StrUtil.isBlank(sortField) || !esSortFields.contains(sortField)) {
+            sortField = "id";
+        }
 
 
 
@@ -1512,9 +1552,6 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
                 ));
             }
         } else {
-            if (StrUtil.isBlank(sortField)) {
-                sortField = "id";
-            }
             SortOrder esSortOrder = "descend".equals(sortOrder) ? SortOrder.DESC : SortOrder.ASC;
             searchQueryBuilder.withSort(SortBuilders.fieldSort(sortField).order(esSortOrder));
         }

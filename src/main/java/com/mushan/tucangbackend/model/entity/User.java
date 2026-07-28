@@ -16,6 +16,12 @@ import lombok.Data;
 @TableName(value ="user")
 @Data
 public class User implements Serializable {
+
+    /**
+     * 固定为管理端升级前的序列化版本，兼容 Redis 中已有的 Spring Session。
+     */
+    private static final long serialVersionUID = -4007983043812036024L;
+
     /**
      * id
      */
@@ -51,6 +57,16 @@ public class User implements Serializable {
      * 用户角色：user/admin
      */
     private String userRole;
+
+    /**
+     * 账号状态：0-正常，1-禁用
+     */
+    private Integer userStatus;
+
+    /**
+     * 最近登录时间
+     */
+    private Date lastLoginTime;
 
     /**
      * 编辑时间

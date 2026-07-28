@@ -8,6 +8,7 @@ import com.mushan.tucangbackend.model.dto.picture.PictureQueryRequest;
 import com.mushan.tucangbackend.model.entity.Picture;
 import com.mushan.tucangbackend.model.enums.PictureReviewStatusEnum;
 import com.mushan.tucangbackend.model.vo.PictureVO;
+import com.mushan.tucangbackend.service.PictureCacheService;
 import com.mushan.tucangbackend.service.PictureService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,7 @@ class PictureControllerScopeTest {
     private PictureController pictureController;
     private PictureService pictureService;
     private ValueOperations<String, String> valueOperations;
+    private PictureCacheService pictureCacheService;
 
     @BeforeEach
     @SuppressWarnings("unchecked")
@@ -40,10 +42,13 @@ class PictureControllerScopeTest {
         pictureService = mock(PictureService.class);
         StringRedisTemplate stringRedisTemplate = mock(StringRedisTemplate.class);
         valueOperations = mock(ValueOperations.class);
+        pictureCacheService = mock(PictureCacheService.class);
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(pictureCacheService.getVersion()).thenReturn("7");
 
         ReflectionTestUtils.setField(pictureController, "pictureService", pictureService);
         ReflectionTestUtils.setField(pictureController, "stringRedisTemplate", stringRedisTemplate);
+        ReflectionTestUtils.setField(pictureController, "pictureCacheService", pictureCacheService);
     }
 
     @Test
@@ -78,9 +83,9 @@ class PictureControllerScopeTest {
         assertTrue(request.isNullSpaceId());
         assertEquals(PictureReviewStatusEnum.PASS.getValue(), request.getReviewStatus());
         verify(valueOperations).get(org.mockito.ArgumentMatchers.startsWith(
-                "tucang:listPictureVOByPage:"));
+                "tucang:listPictureVOByPage:7:"));
         verify(valueOperations).set(
-                org.mockito.ArgumentMatchers.startsWith("tucang:listPictureVOByPage:"),
+                org.mockito.ArgumentMatchers.startsWith("tucang:listPictureVOByPage:7:"),
                 anyString(),
                 eq(5L),
                 eq(java.util.concurrent.TimeUnit.MINUTES));

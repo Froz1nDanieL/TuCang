@@ -4,6 +4,7 @@ import com.mushan.tucangbackend.model.es.PictureEsDTO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
@@ -18,6 +19,7 @@ import javax.annotation.Resource;
  * 已存在且类型冲突的旧索引不会被自动删除，应通过新索引重建后切换。
  */
 @Component
+@ConditionalOnProperty(prefix = "tucang.elasticsearch", name = "initialize-index", havingValue = "true")
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
 @Slf4j
 public class ElasticsearchIndexInitializer implements ApplicationRunner {

@@ -18,6 +18,11 @@ public interface UserConstant {
      * 管理员角色
      */
     String ADMIN_ROLE = "admin";
+
+    /**
+     * 审核员角色
+     */
+    String REVIEWER_ROLE = "reviewer";
     
     // endregion
 }

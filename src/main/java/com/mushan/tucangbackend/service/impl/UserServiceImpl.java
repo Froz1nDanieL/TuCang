@@ -143,6 +143,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             log.info("user login failed, userAccount cannot match userPassword");
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户不存在或密码错误");
         }
+        if (Integer.valueOf(1).equals(user.getUserStatus())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN_ERROR, "账号已被禁用");
+        }
+        Date loginTime = new Date();
+        User loginUpdate = new User();
+        loginUpdate.setId(user.getId());
+        loginUpdate.setLastLoginTime(loginTime);
+        this.updateById(loginUpdate);
+        user.setLastLoginTime(loginTime);
         // 3. 记录用户的登录态
         request.getSession().setAttribute(USER_LOGIN_STATE, user);
         // 4. 记录用户登录态到 Sa-token，便于空间鉴权时使用，注意保证该用户信息与 SpringSession 中的信息过期时间一致
@@ -204,6 +213,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (currentUser == null) {
             throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
         }
+        if (Integer.valueOf(1).equals(currentUser.getUserStatus())) {
+            request.getSession().removeAttribute(USER_LOGIN_STATE);
+            try {
+                if (StpKit.SPACE.isLogin()) {
+                    StpKit.SPACE.logout();
+                }
+            } catch (RuntimeException exception) {
+                // The account must still be denied if token cleanup infrastructure is unavailable.
+                log.warn("Failed to clear Sa-Token state for disabled user {}", userId, exception);
+            }
+            throw new BusinessException(ErrorCode.FORBIDDEN_ERROR, "账号已被禁用");
+        }
         return currentUser;
     }
     @Override
@@ -215,6 +236,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
         // 移除登录态
         request.getSession().removeAttribute(USER_LOGIN_STATE);
+        if (StpKit.SPACE.isLogin()) {
+            StpKit.SPACE.logout();
+        }
         return true;
     }
 
@@ -252,18 +276,31 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
         Long id = userQueryRequest.getId();
         String userAccount = userQueryRequest.getUserAccount();
+        String searchText = userQueryRequest.getSearchText();
         String userName = userQueryRequest.getUserName();
         String userProfile = userQueryRequest.getUserProfile();
         String userRole = userQueryRequest.getUserRole();
+        Integer userStatus = userQueryRequest.getUserStatus();
         String sortField = userQueryRequest.getSortField();
         String sortOrder = userQueryRequest.getSortOrder();
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq(ObjUtil.isNotNull(id), "id", id);
         queryWrapper.eq(StrUtil.isNotBlank(userRole), "userRole", userRole);
+        queryWrapper.eq(userStatus != null, "userStatus", userStatus);
         queryWrapper.like(StrUtil.isNotBlank(userAccount), "userAccount", userAccount);
         queryWrapper.like(StrUtil.isNotBlank(userName), "userName", userName);
+        if (StrUtil.isNotBlank(searchText)) {
+            queryWrapper.and(wrapper -> wrapper
+                    .like("userAccount", searchText)
+                    .or()
+                    .like("userName", searchText));
+        }
         queryWrapper.like(StrUtil.isNotBlank(userProfile), "userProfile", userProfile);
-        queryWrapper.orderBy(StrUtil.isNotEmpty(sortField), sortOrder.equals("ascend"), sortField);
+        List<String> allowedSortFields = java.util.Arrays.asList(
+                "id", "userAccount", "userName", "userRole", "userStatus", "createTime", "lastLoginTime"
+        );
+        boolean sortable = StrUtil.isNotEmpty(sortField) && allowedSortFields.contains(sortField);
+        queryWrapper.orderBy(sortable, "ascend".equals(sortOrder), sortField);
         return queryWrapper;
     }
 

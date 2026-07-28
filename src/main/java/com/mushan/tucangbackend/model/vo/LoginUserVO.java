@@ -45,6 +45,10 @@ public class LoginUserVO {
      */
     private String userRole;
 
+    private Integer userStatus;
+
+    private Date lastLoginTime;
+
     /**
      * 编辑时间
      */

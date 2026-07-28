@@ -162,7 +162,9 @@ create table user
     userName     varchar(256)                           null comment '用户昵称',
     userAvatar   varchar(1024)                          null comment '用户头像',
     userProfile  varchar(512)                           null comment '用户简介',
-    userRole     varchar(256) default 'user'            not null comment '用户角色：user/admin',
+    userRole     varchar(256) default 'user'            not null comment '用户角色：user/reviewer/admin',
+    userStatus   tinyint      default 0                 not null comment '账号状态：0-正常，1-禁用',
+    lastLoginTime datetime                              null comment '最近登录时间',
     editTime     datetime     default CURRENT_TIMESTAMP not null comment '编辑时间',
     createTime   datetime     default CURRENT_TIMESTAMP not null comment '创建时间',
     updateTime   datetime     default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
@@ -174,6 +176,45 @@ create table user
 
 create index idx_userName
     on user (userName);
+
+create index idx_user_role_status
+    on user (userRole, userStatus);
+
+create index idx_user_last_login_time
+    on user (lastLoginTime);
+
+create table admin_operation_log
+(
+    id             bigint                             not null comment '主键'
+        primary key,
+    operatorId     bigint                             null comment '操作人 ID',
+    operatorName   varchar(256)                       null comment '操作人名称',
+    operatorRole   varchar(32)                        null comment '操作人角色',
+    module         varchar(64)                        not null comment '业务模块',
+    action         varchar(64)                        not null comment '操作动作',
+    targetType     varchar(64)                        null comment '目标类型',
+    targetId       varchar(128)                       null comment '目标 ID',
+    requestMethod  varchar(16)                        not null comment 'HTTP 方法',
+    requestPath    varchar(512)                       not null comment '请求路径',
+    requestParams  text                               null comment '脱敏后的请求摘要',
+    resultCode     int                                not null comment '业务结果码',
+    success        tinyint                            not null comment '是否成功',
+    errorMessage   varchar(512)                       null comment '错误摘要',
+    ip             varchar(64)                        null comment '客户端 IP',
+    userAgent      varchar(512)                       null comment 'User-Agent',
+    durationMs     bigint                             not null comment '耗时毫秒',
+    createTime     datetime default CURRENT_TIMESTAMP not null comment '创建时间'
+)
+    comment '后台管理操作审计日志' collate = utf8mb4_unicode_ci;
+
+create index idx_admin_log_operator_time
+    on admin_operation_log (operatorId, createTime);
+
+create index idx_admin_log_module_action_time
+    on admin_operation_log (module, action, createTime);
+
+create index idx_admin_log_success_time
+    on admin_operation_log (success, createTime);
 
 -- auto-generated definition
 create table user_picture_interaction
