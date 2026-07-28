@@ -27,7 +27,13 @@ class AdminPermissionServiceTest {
         reviewer.setUserRole(UserRoleEnum.REVIEWER.getValue());
 
         assertTrue(service.hasPermission(reviewer, AdminPermissionConstant.PICTURE_REVIEW));
+        assertTrue(service.hasPermission(reviewer, AdminPermissionConstant.REVIEW_WORKBENCH));
+        assertTrue(service.hasPermission(reviewer, AdminPermissionConstant.REVIEW_STATS_SELF));
+        assertTrue(service.hasPermission(reviewer, AdminPermissionConstant.ASSET_TRACE_VIEW));
         assertTrue(service.hasPermission(reviewer, AdminPermissionConstant.OPERATION_LOG_SELF));
+        assertFalse(service.hasPermission(reviewer, AdminPermissionConstant.ASSET_REPAIR));
+        assertFalse(service.hasPermission(reviewer, AdminPermissionConstant.AI_TASK_VIEW));
+        assertFalse(service.hasPermission(reviewer, AdminPermissionConstant.SEARCH_INDEX_REPAIR));
         assertFalse(service.hasPermission(reviewer, AdminPermissionConstant.USER_MANAGE));
         assertFalse(service.hasPermission(reviewer, AdminPermissionConstant.OPERATION_LOG_ALL));
     }
@@ -42,5 +48,10 @@ class AdminPermissionServiceTest {
         assertTrue(service.hasPermission(admin, AdminPermissionConstant.USER_MANAGE));
         assertTrue(service.hasPermission(admin, AdminPermissionConstant.SPACE_MANAGE));
         assertTrue(service.hasPermission(admin, AdminPermissionConstant.OPERATION_LOG_ALL));
+        assertTrue(service.hasPermission(admin, AdminPermissionConstant.REVIEW_STATS_ALL));
+        assertTrue(service.hasPermission(admin, AdminPermissionConstant.ASSET_REPAIR));
+        assertTrue(service.hasPermission(admin, AdminPermissionConstant.AI_TASK_MANAGE));
+        assertTrue(service.hasPermission(admin, AdminPermissionConstant.SEARCH_QUALITY_VIEW));
+        assertTrue(service.hasPermission(admin, AdminPermissionConstant.SEARCH_INDEX_REPAIR));
     }
 }

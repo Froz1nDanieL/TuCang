@@ -77,6 +77,15 @@ picture:
     backfill-enabled: ${PICTURE_COLOR_BACKFILL_ENABLED:false}
 
 tucang:
+  ai:
+    text-model: ${ALIYUN_AI_TEXT_MODEL:wanx2.1-t2i-turbo}
+    outpaint-model: ${ALIYUN_AI_OUTPAINT_MODEL:image-out-painting}
+    task-sync-enabled: ${AI_TASK_SYNC_ENABLED:false}
+    task-sync-delay-ms: ${AI_TASK_SYNC_DELAY_MS:30000}
+  admin:
+    review-sla-minutes: ${REVIEW_SLA_MINUTES:30}
+    asset-diagnostic-timeout-ms: ${ASSET_DIAGNOSTIC_TIMEOUT_MS:2000}
+    index-check-page-size: ${INDEX_CHECK_PAGE_SIZE:200}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
   websocket:

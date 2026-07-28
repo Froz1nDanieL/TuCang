@@ -13,6 +13,7 @@ public class AdminBatchReviewRequest implements Serializable {
     private List<Long> ids;
     private Integer reviewStatus;
     private String reviewMessage;
+    private String reasonCode;
 
     private static final long serialVersionUID = 1L;
 }

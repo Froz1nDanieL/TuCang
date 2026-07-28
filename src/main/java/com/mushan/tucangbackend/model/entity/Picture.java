@@ -86,6 +86,16 @@ public class Picture {
     private Long spaceId;
 
     /**
+     * 来源：UNKNOWN/LOCAL_UPLOAD/URL_UPLOAD/AI_TEXT/AI_OUTPAINT
+     */
+    private String sourceType;
+
+    /**
+     * 关联 AI 外部任务 ID
+     */
+    private String aiTaskId;
+
+    /**
      * 创建时间
      */
     private Date createTime;

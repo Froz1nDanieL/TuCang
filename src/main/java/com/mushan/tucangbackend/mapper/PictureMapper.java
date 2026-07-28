@@ -33,4 +33,17 @@ public interface PictureMapper extends BaseMapper<Picture> {
     @Update("UPDATE picture SET favoriteCount = GREATEST(COALESCE(favoriteCount, 0) + #{delta}, 0) " +
             "WHERE id = #{pictureId} AND isDelete = 0")
     int adjustFavoriteCount(@Param("pictureId") Long pictureId, @Param("delta") int delta);
+
+    @Select("SELECT id FROM picture ORDER BY id")
+    List<Long> listAllPictureIdsWithDelete();
+
+    @Select("SELECT id FROM picture ORDER BY updateTime DESC, id DESC LIMIT #{limit}")
+    List<Long> listRecentPictureIdsWithDelete(@Param("limit") int limit);
+
+    @Select("SELECT id FROM picture WHERE id > #{afterId} ORDER BY id LIMIT #{limit}")
+    List<Long> listPictureIdsWithDeleteAfter(@Param("afterId") long afterId,
+                                             @Param("limit") int limit);
+
+    @Select("SELECT COUNT(*) FROM picture")
+    long countAllPicturesWithDelete();
 }

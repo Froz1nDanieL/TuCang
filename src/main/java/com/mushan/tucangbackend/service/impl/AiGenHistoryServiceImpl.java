@@ -36,6 +36,12 @@ public class AiGenHistoryServiceImpl extends ServiceImpl<AiGenHistoryMapper, AiG
         aiGenHistory.setTaskType(aiGenHistoryAddRequest.getTaskType());
         aiGenHistory.setSourcePictureId(aiGenHistoryAddRequest.getSourcePictureId());
         aiGenHistory.setStatus(aiGenHistoryAddRequest.getStatus());
+        aiGenHistory.setTaskStatus(aiGenHistoryAddRequest.getTaskStatus());
+        aiGenHistory.setModelName(aiGenHistoryAddRequest.getModelName());
+        aiGenHistory.setRequestId(aiGenHistoryAddRequest.getRequestId());
+        aiGenHistory.setRequestParams(aiGenHistoryAddRequest.getRequestParams());
+        aiGenHistory.setRetryFromTaskId(aiGenHistoryAddRequest.getRetryFromTaskId());
+        aiGenHistory.setResultCount(0);
         aiGenHistory.setCreateTime(new Date());
         this.save(aiGenHistory);
         return aiGenHistory.getId();
@@ -47,6 +53,13 @@ public class AiGenHistoryServiceImpl extends ServiceImpl<AiGenHistoryMapper, AiG
         queryWrapper.eq("taskId", taskId)
                 .eq("userId", userId)
                 .eq("taskType", taskType);
+        return this.getOne(queryWrapper, false);
+    }
+
+    @Override
+    public AiGenHistory getOwnedTask(String taskId, Long userId) {
+        QueryWrapper<AiGenHistory> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("taskId", taskId).eq("userId", userId);
         return this.getOne(queryWrapper, false);
     }
 

@@ -30,6 +30,8 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Aspect
 @Component
@@ -38,6 +40,8 @@ import java.util.concurrent.TimeUnit;
 public class AdminOperationAspect {
 
     private static final int MAX_PARAM_LENGTH = 2000;
+    private static final long IDEMPOTENCY_TTL_MS = 5000L;
+    private static final ConcurrentHashMap<String, Long> LOCAL_IDEMPOTENCY = new ConcurrentHashMap<>();
 
     @Resource
     private UserService userService;
@@ -115,9 +119,30 @@ public class AdminOperationAspect {
                 ? clientKey
                 : DigestUtil.sha256Hex(request.getRequestURI() + ":" + params);
         String key = "tucang:admin:idempotency:" + user.getId() + ":" + fingerprint;
-        Boolean first = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", 5, TimeUnit.SECONDS);
-        if (!Boolean.TRUE.equals(first)) {
-            throw new BusinessException(ErrorCode.CONFLICT_ERROR, "请勿重复提交");
+        try {
+            Boolean first = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", 5, TimeUnit.SECONDS);
+            if (!Boolean.TRUE.equals(first)) {
+                throw new BusinessException(ErrorCode.CONFLICT_ERROR, "请勿重复提交");
+            }
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (RuntimeException redisFailure) {
+            long now = System.currentTimeMillis();
+            AtomicBoolean acquired = new AtomicBoolean(false);
+            LOCAL_IDEMPOTENCY.compute(key, (ignored, expiresAt) -> {
+                if (expiresAt == null || expiresAt <= now) {
+                    acquired.set(true);
+                    return now + IDEMPOTENCY_TTL_MS;
+                }
+                return expiresAt;
+            });
+            if (!acquired.get()) {
+                throw new BusinessException(ErrorCode.CONFLICT_ERROR, "请勿重复提交");
+            }
+            if (LOCAL_IDEMPOTENCY.size() > 10000) {
+                LOCAL_IDEMPOTENCY.entrySet().removeIf(entry -> entry.getValue() <= now);
+            }
+            log.warn("Redis idempotency lock unavailable; using local fallback");
         }
     }
 

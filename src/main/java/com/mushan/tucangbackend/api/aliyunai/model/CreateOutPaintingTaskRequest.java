@@ -12,7 +12,7 @@ public class CreateOutPaintingTaskRequest implements Serializable {
     /**
      * 模型，例如 "image-out-painting"
      */
-    private String model = "image-out-painting";
+    private String model;
 
     /**
      * 输入图像信息

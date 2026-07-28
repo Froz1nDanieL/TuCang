@@ -21,6 +21,11 @@ public class PictureReviewRequest implements Serializable {
      * 审核信息  
      */  
     private String reviewMessage;  
+
+    /**
+     * 标准拒绝原因。通过时为空。
+     */
+    private String reasonCode;
   
   
     private static final long serialVersionUID = 1L;  

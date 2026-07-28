@@ -34,6 +34,8 @@ public interface AiGenHistoryService extends IService<AiGenHistory> {
      */
     AiGenHistory getOwnedTask(String taskId, Long userId, Integer taskType);
 
+    AiGenHistory getOwnedTask(String taskId, Long userId);
+
     /**
      * 获取用户AI生成历史列表
      *

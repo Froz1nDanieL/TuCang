@@ -26,13 +26,20 @@ public class AdminPictureVO implements Serializable {
     private String picFormat;
     private Long userId;
     private String userName;
+    private String spaceName;
     private Long spaceId;
+    private String sourceType;
+    private String aiTaskId;
     private Integer reviewStatus;
     private String reviewMessage;
     private Long reviewerId;
     private Date reviewTime;
     private Date createTime;
     private Date updateTime;
+    private Integer likeCount;
+    private Integer favoriteCount;
+    private Long waitSeconds;
+    private Long recentRejectCount;
 
     public static AdminPictureVO from(Picture picture) {
         AdminPictureVO vo = new AdminPictureVO();

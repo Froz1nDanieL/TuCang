@@ -16,11 +16,13 @@ import com.mushan.tucangbackend.model.dto.picture.PictureQueryRequest;
 import com.mushan.tucangbackend.model.dto.picture.PictureReviewRequest;
 import com.mushan.tucangbackend.model.dto.picture.PictureUpdateRequest;
 import com.mushan.tucangbackend.model.entity.Picture;
+import com.mushan.tucangbackend.model.entity.Space;
 import com.mushan.tucangbackend.model.entity.User;
 import com.mushan.tucangbackend.model.vo.admin.AdminBatchReviewResultVO;
 import com.mushan.tucangbackend.model.vo.admin.AdminPictureVO;
 import com.mushan.tucangbackend.service.PictureChangeNotifier;
 import com.mushan.tucangbackend.service.PictureService;
+import com.mushan.tucangbackend.service.SpaceService;
 import com.mushan.tucangbackend.service.UserService;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.BeanUtils;
@@ -53,6 +55,9 @@ public class AdminPictureController {
     private UserService userService;
 
     @Resource
+    private SpaceService spaceService;
+
+    @Resource
     private PictureChangeNotifier pictureChangeNotifier;
 
     @Resource
@@ -81,9 +86,19 @@ public class AdminPictureController {
                 ? Collections.<Long, User>emptyMap()
                 : userService.listByIds(userIds).stream()
                 .collect(Collectors.toMap(User::getId, Function.identity(), (left, right) -> left));
+        Set<Long> spaceIds = records.stream()
+                .map(AdminPictureVO::getSpaceId)
+                .filter(id -> id != null)
+                .collect(Collectors.toSet());
+        Map<Long, Space> spaces = spaceIds.isEmpty()
+                ? Collections.<Long, Space>emptyMap()
+                : spaceService.listByIds(spaceIds).stream()
+                .collect(Collectors.toMap(Space::getId, Function.identity(), (left, right) -> left));
         for (AdminPictureVO record : records) {
             User owner = users.get(record.getUserId());
+            Space space = spaces.get(record.getSpaceId());
             record.setUserName(owner == null ? null : owner.getUserName());
+            record.setSpaceName(space == null ? null : space.getSpaceName());
         }
         result.setRecords(records);
         return ResultUtils.success(result);
@@ -136,6 +151,7 @@ public class AdminPictureController {
             reviewRequest.setId(id);
             reviewRequest.setReviewStatus(batchRequest.getReviewStatus());
             reviewRequest.setReviewMessage(batchRequest.getReviewMessage());
+            reviewRequest.setReasonCode(batchRequest.getReasonCode());
             try {
                 pictureService.doPictureReview(reviewRequest, loginUser);
                 result.getSuccessIds().add(id);

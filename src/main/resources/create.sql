@@ -24,6 +24,8 @@ create table picture
     reviewTime    datetime                           null comment '审核时间',
     thumbnailUrl  varchar(512)                       null comment '缩略图 url',
     spaceId       bigint                             null comment '空间 id（为空表示公共空间）',
+    sourceType    varchar(32) default 'UNKNOWN'       not null comment '来源：UNKNOWN/LOCAL_UPLOAD/URL_UPLOAD/AI_TEXT/AI_OUTPAINT',
+    aiTaskId      varchar(255)                       null comment '关联 AI 外部任务 ID',
     likeCount     int      default 0                 null comment '点赞数',
     favoriteCount int      default 0                 null comment '收藏数',
     picColor      varchar(16)                        null comment '图片主色调',
@@ -55,6 +57,12 @@ create index idx_tags
 create index idx_userId
     on picture (userId);
 
+create index idx_picture_source_review_time
+    on picture (sourceType, reviewStatus, createTime);
+
+create index idx_picture_ai_task_id
+    on picture (aiTaskId);
+
 -- auto-generated definition
 create table ai_gen_history
 (
@@ -68,6 +76,16 @@ create table ai_gen_history
     imageUrl   varchar(512)                       null comment '生成图片URL',
     imageSize  varchar(32)                        null comment '图片尺寸',
     status     tinyint  default 1                 null comment '状态: 1-成功, 2-失败',
+    taskStatus varchar(16) default 'UNKNOWN'       not null comment 'PENDING/RUNNING/SUCCEEDED/FAILED/CANCELED/UNKNOWN',
+    modelName  varchar(128)                       null comment '实际模型名称',
+    requestId  varchar(255)                       null comment '供应商请求 ID',
+    requestParams text                            null comment '脱敏后的请求参数',
+    completedTime datetime                        null comment '完成时间',
+    durationMs bigint                             null comment '任务耗时毫秒',
+    resultCount int default 0                     not null comment '结果数量',
+    errorCode varchar(128)                        null comment '错误码',
+    errorMessage varchar(512)                     null comment '脱敏错误摘要',
+    retryFromTaskId varchar(255)                  null comment '重试来源任务 ID',
     createTime datetime default CURRENT_TIMESTAMP not null comment '创建时间',
     constraint uniq_ai_gen_task_type_task_id
         unique (taskType, taskId)
@@ -78,6 +96,15 @@ create index idx_create_time
 
 create index idx_user_id_create_time
     on ai_gen_history (userId, createTime);
+
+create index idx_ai_task_status_time
+    on ai_gen_history (taskStatus, createTime);
+
+create index idx_ai_model_type_time
+    on ai_gen_history (modelName, taskType, createTime);
+
+create index idx_ai_retry_from_task
+    on ai_gen_history (retryFromTaskId);
 
 -- auto-generated definition
 create table picture_album
@@ -215,6 +242,86 @@ create index idx_admin_log_module_action_time
 
 create index idx_admin_log_success_time
     on admin_operation_log (success, createTime);
+
+create table picture_review_record
+(
+    id            bigint                             not null comment '主键'
+        primary key,
+    pictureId     bigint                             not null comment '图片 ID',
+    fromStatus    int                                not null comment '原审核状态',
+    toStatus      int                                not null comment '新审核状态',
+    reviewerId    bigint                             not null comment '审核人 ID',
+    reviewerRole  varchar(32)                        not null comment '审核人角色',
+    reasonCode    varchar(64)                        null comment '标准拒绝原因',
+    reviewMessage varchar(512)                       null comment '审核意见',
+    durationMs    bigint                             null comment '从入队到处理完成耗时',
+    conflict      tinyint  default 0                 not null comment '是否并发冲突',
+    createTime    datetime default CURRENT_TIMESTAMP not null
+)
+    comment '图片审核决策记录' collate = utf8mb4_unicode_ci;
+
+create index idx_review_picture_time
+    on picture_review_record (pictureId, createTime);
+
+create index idx_review_reviewer_time
+    on picture_review_record (reviewerId, createTime);
+
+create index idx_review_result_time
+    on picture_review_record (toStatus, createTime);
+
+create table picture_index_record
+(
+    id            bigint                             not null comment '主键'
+        primary key,
+    pictureId     bigint                             null comment '图片 ID',
+    recordType    varchar(16)                        not null comment 'CHECK/SYNC',
+    batchId       varchar(64)                        null comment '对账批次 ID',
+    syncType      varchar(32)                        null comment 'IMMEDIATE/MANUAL/FULL/INCREMENTAL',
+    operation     varchar(16)                        null comment 'UPSERT/DELETE/CHECK',
+    mismatchTypes varchar(512)                       null comment '不一致类型 JSON',
+    success       tinyint                            not null comment '是否成功',
+    errorMessage  varchar(512)                       null comment '错误摘要',
+    durationMs    bigint   default 0                 not null,
+    resolved      tinyint  default 0                 not null comment '是否已解决',
+    resolvedTime  datetime                           null,
+    operatorId    bigint                             null comment '人工操作管理员',
+    createTime    datetime default CURRENT_TIMESTAMP not null
+)
+    comment '图片索引检查与同步记录' collate = utf8mb4_unicode_ci;
+
+create index idx_index_picture_time
+    on picture_index_record (pictureId, createTime);
+
+create index idx_index_batch_result
+    on picture_index_record (batchId, success);
+
+create index idx_index_open_mismatch
+    on picture_index_record (recordType, resolved, createTime);
+
+create table admin_job_execution
+(
+    id             bigint                             not null comment '主键'
+        primary key,
+    jobName        varchar(64)                        not null comment '任务名',
+    triggerType    varchar(16)                        not null comment 'MANUAL/SCHEDULED',
+    status         varchar(16)                        not null comment 'PENDING/RUNNING/SUCCEEDED/FAILED',
+    scopeType      varchar(16)                        null comment 'SAMPLE/FULL',
+    totalCount     bigint   default 0                 not null,
+    processedCount bigint   default 0                 not null,
+    successCount   bigint   default 0                 not null,
+    failureCount   bigint   default 0                 not null,
+    errorMessage   varchar(512)                       null,
+    operatorId     bigint                             null,
+    idempotencyKey varchar(128)                       null,
+    startedTime    datetime                           null,
+    completedTime  datetime                           null,
+    createTime     datetime default CURRENT_TIMESTAMP not null,
+    constraint uk_admin_job_idempotency unique (idempotencyKey)
+)
+    comment '后台任务执行记录' collate = utf8mb4_unicode_ci;
+
+create index idx_admin_job_name_status
+    on admin_job_execution (jobName, status, createTime);
 
 -- auto-generated definition
 create table user_picture_interaction

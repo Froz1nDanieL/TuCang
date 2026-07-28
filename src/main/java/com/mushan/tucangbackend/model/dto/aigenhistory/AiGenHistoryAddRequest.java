@@ -36,6 +36,11 @@ public class AiGenHistoryAddRequest implements Serializable {
      * 状态: 0-进行中, 1-成功, 2-失败
      */
     private Integer status;
+    private String taskStatus;
+    private String modelName;
+    private String requestId;
+    private String requestParams;
+    private String retryFromTaskId;
 
     private static final long serialVersionUID = 1L;
 }

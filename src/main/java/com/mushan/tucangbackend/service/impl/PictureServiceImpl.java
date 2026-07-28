@@ -12,6 +12,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.mushan.tucangbackend.api.aliyunai.AliYunAiApi;
 import com.mushan.tucangbackend.api.aliyunai.model.*;
+import com.mushan.tucangbackend.constant.AiTaskStatusConstant;
 import com.mushan.tucangbackend.exception.BusinessException;
 import com.mushan.tucangbackend.exception.ErrorCode;
 import com.mushan.tucangbackend.exception.ThrowUtils;
@@ -56,6 +57,7 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.elasticsearch.core.ElasticsearchRestTemplate;
 import org.springframework.data.elasticsearch.core.SearchHit;
 import org.springframework.data.elasticsearch.core.SearchHits;
@@ -88,6 +90,12 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> implements PictureService {
+
+    @Value("${tucang.ai.text-model:wanx2.1-t2i-turbo}")
+    private String textToImageModel;
+
+    @Value("${tucang.ai.outpaint-model:image-out-painting}")
+    private String outPaintingModel;
 
     @Resource
     private FileManager fileManager;
@@ -140,6 +148,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     @Resource
     private PictureChangeNotifier pictureChangeNotifier;
+
+    @Resource
+    private PictureReviewRecordService pictureReviewRecordService;
 
     @Override
     public PictureVO uploadPicture(Object inputSource, PictureUploadRequest pictureUploadRequest, User loginUser) {
@@ -232,6 +243,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         // 重新上传不能改变原图片所有者
         picture.setUserId(oldPicture == null ? loginUser.getId() : oldPicture.getUserId());
         picture.setSpaceId(spaceId);
+        fillPictureSource(picture, inputSource, pictureUploadRequest, loginUser);
         //补充审核信息
         this.fillReviewParams(picture, loginUser);
         // 如果 pictureId 不为空，表示更新，否则是新增
@@ -255,6 +267,24 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         });
         notifyPictureUpsert(picture.getId());
         return PictureVO.objToVo(picture);
+    }
+
+    private void fillPictureSource(Picture picture, Object inputSource,
+                                   PictureUploadRequest request, User loginUser) {
+        if (StrUtil.isNotBlank(request.getAiTaskId())) {
+            AiGenHistory task = aiGenHistoryService.getOwnedTask(request.getAiTaskId(), loginUser.getId());
+            ThrowUtils.throwIf(task == null, ErrorCode.NOT_FOUND_ERROR, "AI 任务不存在");
+            ThrowUtils.throwIf(!AiTaskStatusConstant.SUCCEEDED.equals(task.getTaskStatus()),
+                    ErrorCode.CONFLICT_ERROR, "AI 任务尚未成功完成");
+            ThrowUtils.throwIf(!Integer.valueOf(AiGenerationTaskTypeEnum.OUT_PAINTING.getValue())
+                            .equals(task.getTaskType()),
+                    ErrorCode.PARAMS_ERROR, "当前上传流程仅支持应用扩图结果");
+            picture.setSourceType("AI_OUTPAINT");
+            picture.setAiTaskId(task.getTaskId());
+            return;
+        }
+        picture.setSourceType(inputSource instanceof String ? "URL_UPLOAD" : "LOCAL_UPLOAD");
+        picture.setAiTaskId(null);
     }
 
     long calculateSpaceSizeDelta(Picture oldPicture, Picture newPicture) {
@@ -418,6 +448,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         String reviewMessage = pictureQueryRequest.getReviewMessage();
         Long reviewerId = pictureQueryRequest.getReviewerId();
         Long spaceId = pictureQueryRequest.getSpaceId();
+        String sourceType = pictureQueryRequest.getSourceType();
         Date startEditTime = pictureQueryRequest.getStartEditTime();
         Date endEditTime = pictureQueryRequest.getEndEditTime();
         boolean nullSpaceId = pictureQueryRequest.isNullSpaceId();
@@ -447,6 +478,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         queryWrapper.like(StrUtil.isNotBlank(reviewMessage), "reviewMessage", reviewMessage);
         queryWrapper.eq(ObjUtil.isNotEmpty(reviewerId), "reviewerId", reviewerId);
         queryWrapper.eq(ObjUtil.isNotEmpty(spaceId), "spaceId", spaceId);
+        queryWrapper.eq(StrUtil.isNotBlank(sourceType), "sourceType", sourceType);
         queryWrapper.ge(startEditTime != null, "editTime", startEditTime);
         queryWrapper.lt(endEditTime != null, "editTime", endEditTime);
         queryWrapper.isNull(nullSpaceId, "spaceId");
@@ -545,6 +577,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         checkPicturePermission(loginUser, picture, SpaceUserPermissionConstant.PICTURE_EDIT);
         // 构造请求参数
         CreateOutPaintingTaskRequest taskRequest = new CreateOutPaintingTaskRequest();
+        taskRequest.setModel(outPaintingModel);
         CreateOutPaintingTaskRequest.Input input = new CreateOutPaintingTaskRequest.Input();
         input.setImageUrl(picture.getUrl());
         taskRequest.setInput(input);
@@ -565,15 +598,21 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         aiGenHistoryAddRequest.setTaskType(AiGenerationTaskTypeEnum.OUT_PAINTING.getValue());
         aiGenHistoryAddRequest.setSourcePictureId(pictureId);
         aiGenHistoryAddRequest.setStatus(1);
+        aiGenHistoryAddRequest.setTaskStatus(AiTaskStatusConstant.RUNNING);
+        aiGenHistoryAddRequest.setModelName(outPaintingModel);
+        aiGenHistoryAddRequest.setRequestId(response.getRequestId());
+        aiGenHistoryAddRequest.setRequestParams(JSONUtil.toJsonStr(createPictureOutPaintingRequest));
         aiGenHistoryService.addAiGenHistory(aiGenHistoryAddRequest, loginUser);
         return response;
     }
 
     @Override
     public GetOutPaintingTaskResponse getPictureOutPaintingTask(String taskId, User loginUser) {
-        getRequiredOwnedAiGenerationTask(
+        AiGenHistory ownedTask = getRequiredOwnedAiGenerationTask(
                 taskId, loginUser, AiGenerationTaskTypeEnum.OUT_PAINTING);
-        return aliYunAiApi.getOutPaintingTask(taskId);
+        GetOutPaintingTaskResponse response = aliYunAiApi.getOutPaintingTask(taskId);
+        updateOutPaintingTask(ownedTask, response);
+        return response;
     }
 
     /**
@@ -603,6 +642,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
         // 构造请求参数
         CreateTextToImageTaskRequest taskRequest = new CreateTextToImageTaskRequest();
+        taskRequest.setModel(textToImageModel);
         CreateTextToImageTaskRequest.Input input = new CreateTextToImageTaskRequest.Input();
         input.setPrompt(createTextToImageRequest.getPrompt());
         input.setNegativePrompt(createTextToImageRequest.getNegativePrompt());
@@ -624,6 +664,10 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         aiGenHistoryAddRequest.setStatus(1);
         aiGenHistoryAddRequest.setTaskId(textToImageTask.getOutput().getTaskId());
         aiGenHistoryAddRequest.setTaskType(AiGenerationTaskTypeEnum.TEXT_TO_IMAGE.getValue());
+        aiGenHistoryAddRequest.setTaskStatus(AiTaskStatusConstant.RUNNING);
+        aiGenHistoryAddRequest.setModelName(textToImageModel);
+        aiGenHistoryAddRequest.setRequestId(textToImageTask.getRequestId());
+        aiGenHistoryAddRequest.setRequestParams(JSONUtil.toJsonStr(createTextToImageRequest));
         aiGenHistoryService.addAiGenHistory(aiGenHistoryAddRequest, loginUser);
 
         // 创建任务
@@ -643,6 +687,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             // 根据任务状态映射到AI生成历史状态
             if (taskStatus != null) {
                 Integer aiGenStatus = null;
+                String canonicalStatus = normalizeAiTaskStatus(taskStatus);
                 switch (taskStatus) {
                     case "SUCCEEDED":
                         aiGenStatus = 2; // 成功状态
@@ -662,7 +707,9 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
                 UpdateWrapper<AiGenHistory> updateWrapper = new UpdateWrapper<>();
                 updateWrapper.eq("id", ownedTask.getId())
                         .eq("userId", loginUser.getId())
-                        .set("status", aiGenStatus);
+                        .set("status", aiGenStatus)
+                        .set("taskStatus", canonicalStatus)
+                        .set("requestId", response.getRequestId());
 
                 // 如果任务成功，还需要保存图片URL列表
                 if ("SUCCEEDED".equals(taskStatus) && response.getOutput().getResults() != null
@@ -677,6 +724,16 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
                     List<String> imageToSaves = saveAiGeneratedImagesToStorage(imageUrls);
                     String imageToSaveUrls = JSONUtil.toJsonStr(imageToSaves);
                     updateWrapper.set("imageUrl", imageToSaveUrls);
+                    updateWrapper.set("resultCount", imageToSaves.size());
+                }
+                if (AiTaskStatusConstant.SUCCEEDED.equals(canonicalStatus)
+                        || AiTaskStatusConstant.FAILED.equals(canonicalStatus)
+                        || AiTaskStatusConstant.CANCELED.equals(canonicalStatus)) {
+                    Date completed = new Date();
+                    updateWrapper.set("completedTime", completed)
+                            .set("durationMs", Math.max(0L, completed.getTime() - ownedTask.getCreateTime().getTime()))
+                            .set("errorCode", response.getCode())
+                            .set("errorMessage", StrUtil.sub(response.getMessage(), 0, 512));
                 }
 
                 // 更新AI生成历史记录的状态
@@ -684,6 +741,50 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
             }
         }
         return response;
+    }
+
+    private void updateOutPaintingTask(AiGenHistory ownedTask, GetOutPaintingTaskResponse response) {
+        if (response == null || response.getOutput() == null) {
+            return;
+        }
+        String canonicalStatus = normalizeAiTaskStatus(response.getOutput().getTaskStatus());
+        UpdateWrapper<AiGenHistory> update = new UpdateWrapper<>();
+        update.eq("id", ownedTask.getId())
+                .set("taskStatus", canonicalStatus)
+                .set("requestId", response.getRequestId());
+        if (AiTaskStatusConstant.SUCCEEDED.equals(canonicalStatus)) {
+            String resultUrl = response.getOutput().getOutputImageUrl();
+            if (StrUtil.isNotBlank(resultUrl)) {
+                update.set("imageUrl", JSONUtil.toJsonStr(Collections.singletonList(resultUrl)))
+                        .set("resultCount", 1);
+            }
+        }
+        if (AiTaskStatusConstant.SUCCEEDED.equals(canonicalStatus)
+                || AiTaskStatusConstant.FAILED.equals(canonicalStatus)
+                || AiTaskStatusConstant.CANCELED.equals(canonicalStatus)) {
+            Date completed = new Date();
+            update.set("completedTime", completed)
+                    .set("durationMs", Math.max(0L, completed.getTime() - ownedTask.getCreateTime().getTime()))
+                    .set("errorCode", response.getOutput().getCode())
+                    .set("errorMessage", StrUtil.sub(response.getOutput().getMessage(), 0, 512));
+        }
+        aiGenHistoryService.update(update);
+    }
+
+    private String normalizeAiTaskStatus(String status) {
+        if (StrUtil.isBlank(status)) {
+            return AiTaskStatusConstant.UNKNOWN;
+        }
+        switch (status.toUpperCase(Locale.ROOT)) {
+            case "PENDING":
+            case "RUNNING":
+            case "SUCCEEDED":
+            case "FAILED":
+            case "CANCELED":
+                return status.toUpperCase(Locale.ROOT);
+            default:
+                return AiTaskStatusConstant.UNKNOWN;
+        }
     }
 
     /**
@@ -772,6 +873,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void doPictureReview(PictureReviewRequest pictureReviewRequest, User loginUser) {
         Long id = pictureReviewRequest.getId();
         Integer reviewStatus = pictureReviewRequest.getReviewStatus();
@@ -786,6 +888,8 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         if (oldPicture.getReviewStatus().equals(reviewStatus)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "请勿重复审核");
         }
+        validateReviewReason(reviewStatusEnum, pictureReviewRequest.getReasonCode(),
+                pictureReviewRequest.getReviewMessage());
         // 更新审核状态
         Picture updatePicture = new Picture();
         BeanUtils.copyProperties(pictureReviewRequest, updatePicture);
@@ -794,8 +898,31 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
         UpdateWrapper<Picture> updateWrapper = new UpdateWrapper<>();
         updateWrapper.eq("id", id).eq("reviewStatus", oldPicture.getReviewStatus());
         boolean result = this.update(updatePicture, updateWrapper);
-        ThrowUtils.throwIf(!result, ErrorCode.CONFLICT_ERROR, "图片审核状态已被其他审核员修改");
+        if (!result) {
+            pictureReviewRecordService.recordConflict(
+                    oldPicture, reviewStatus, pictureReviewRequest.getReasonCode(),
+                    pictureReviewRequest.getReviewMessage(), loginUser);
+            throw new BusinessException(ErrorCode.CONFLICT_ERROR, "图片审核状态已被其他审核员修改");
+        }
+        pictureReviewRecordService.recordDecision(
+                oldPicture, reviewStatus, pictureReviewRequest.getReasonCode(),
+                pictureReviewRequest.getReviewMessage(), loginUser);
         notifyPictureUpsert(id);
+    }
+
+    private void validateReviewReason(PictureReviewStatusEnum status, String reasonCode, String message) {
+        if (!PictureReviewStatusEnum.REJECT.equals(status)) {
+            return;
+        }
+        Set<String> allowed = new HashSet<>(Arrays.asList(
+                "COPYRIGHT", "INAPPROPRIATE", "QUALITY", "DUPLICATE", "IRRELEVANT", "OTHER"
+        ));
+        ThrowUtils.throwIf(StrUtil.isBlank(reasonCode) || !allowed.contains(reasonCode),
+                ErrorCode.PARAMS_ERROR, "拒绝图片时必须选择有效原因");
+        ThrowUtils.throwIf("OTHER".equals(reasonCode) && StrUtil.isBlank(message),
+                ErrorCode.PARAMS_ERROR, "选择其他原因时必须填写说明");
+        ThrowUtils.throwIf(StrUtil.length(message) > 512,
+                ErrorCode.PARAMS_ERROR, "审核说明不能超过 512 个字符");
     }
 
     @Override

@@ -8,6 +8,9 @@ import com.qcloud.cos.model.COSObject;
 import com.qcloud.cos.model.GetObjectRequest;
 import com.qcloud.cos.model.PutObjectRequest;
 import com.qcloud.cos.model.PutObjectResult;
+import com.qcloud.cos.model.ObjectMetadata;
+import com.qcloud.cos.model.ciModel.common.ImageProcessRequest;
+import com.qcloud.cos.model.ciModel.persistence.CIUploadResult;
 import com.qcloud.cos.model.ciModel.persistence.PicOperations;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +18,8 @@ import javax.annotation.Resource;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Collections;
+import cn.hutool.core.util.StrUtil;
 
 @Component
 public class CosManager {  
@@ -101,6 +106,60 @@ public class CosManager {
      */
     public String getHost() {
         return cosClientConfig.getHost();
+    }
+
+    public boolean isManagedUrl(String url) {
+        if (StrUtil.isBlank(url) || StrUtil.isBlank(cosClientConfig.getHost())) {
+            return false;
+        }
+        String host = cosClientConfig.getHost().replaceAll("/+$", "");
+        return url.equals(host) || url.startsWith(host + "/");
+    }
+
+    public ObjectMetadata getObjectMetadataByUrl(String url) {
+        return cosClient.getObjectMetadata(cosClientConfig.getBucket(), extractKey(url));
+    }
+
+    public boolean isAvailable() {
+        if (StrUtil.hasBlank(cosClientConfig.getBucket(), cosClientConfig.getRegion(),
+                cosClientConfig.getSecretId(), cosClientConfig.getSecretKey())) {
+            return false;
+        }
+        return cosClient.doesBucketExist(cosClientConfig.getBucket());
+    }
+
+    public String regenerateThumbnail(String url) {
+        String key = extractKey(url);
+        String suffix = FileUtil.getSuffix(key);
+        int slashIndex = key.lastIndexOf('/');
+        String directory = slashIndex < 0 ? "" : key.substring(0, slashIndex + 1);
+        String fileName = slashIndex < 0 ? key : key.substring(slashIndex + 1);
+        String thumbnailKey = directory + FileUtil.mainName(fileName) + "_thumbnail."
+                + (suffix == null || suffix.isEmpty() ? "jpg" : suffix);
+        PicOperations operations = new PicOperations();
+        operations.setIsPicInfo(1);
+        PicOperations.Rule rule = new PicOperations.Rule();
+        rule.setBucket(cosClientConfig.getBucket());
+        rule.setFileId(thumbnailKey);
+        rule.setRule("imageMogr2/thumbnail/512x512>");
+        operations.setRules(Collections.singletonList(rule));
+        ImageProcessRequest request = new ImageProcessRequest(cosClientConfig.getBucket(), key);
+        request.setPicOperations(operations);
+        CIUploadResult ignored = cosClient.processImage(request);
+        return cosClientConfig.getHost().replaceAll("/+$", "") + "/" + thumbnailKey;
+    }
+
+    private String extractKey(String url) {
+        if (!isManagedUrl(url)) {
+            throw new IllegalArgumentException("对象不属于当前 COS 域名");
+        }
+        String host = cosClientConfig.getHost().replaceAll("/+$", "");
+        String key = url.substring(host.length());
+        while (key.startsWith("/")) {
+            key = key.substring(1);
+        }
+        int queryIndex = key.indexOf('?');
+        return queryIndex < 0 ? key : key.substring(0, queryIndex);
     }
 
 }

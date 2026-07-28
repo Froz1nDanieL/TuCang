@@ -26,5 +26,10 @@ public class PictureUploadRequest implements Serializable {
      */
     private Long spaceId;
 
+    /**
+     * AI 结果应用时传递的外部任务 ID。来源类型由服务端校验后决定。
+     */
+    private String aiTaskId;
+
     private static final long serialVersionUID = 1L;  
 }

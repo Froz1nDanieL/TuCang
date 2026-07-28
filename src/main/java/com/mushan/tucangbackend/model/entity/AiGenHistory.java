@@ -60,6 +60,21 @@ public class AiGenHistory {
     private Integer status;
 
     /**
+     * Canonical provider task status.
+     */
+    private String taskStatus;
+
+    private String modelName;
+    private String requestId;
+    private String requestParams;
+    private Date completedTime;
+    private Long durationMs;
+    private Integer resultCount;
+    private String errorCode;
+    private String errorMessage;
+    private String retryFromTaskId;
+
+    /**
      * 创建时间
      */
     private Date createTime;
